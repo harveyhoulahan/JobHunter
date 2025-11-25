@@ -1,0 +1,608 @@
+"""
+Job scoring and matching engine
+Evaluates job listings against Harvey's profile
+NOW WITH AI-POWERED SEMANTIC SCORING!
+"""
+import re
+import sys
+import os
+from typing import Dict, List, Tuple, Any
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from profile import HARVEY_PROFILE
+
+# Try to import AI scorer
+try:
+    from .ai_scorer import get_ai_scorer
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+
+
+class JobScorer:
+    """
+    Scores job listings on a 0-100 scale based on:
+    - AI Semantic Match (40%) - NEW! Uses transformers to understand meaning
+    - Technical stack match (25%)
+    - Industry match (15%)
+    - Role match (10%)
+    - Eligibility match (5%)
+    - Visa friendliness (5%)
+    """
+    
+    # Scoring weights (must sum to 100)
+    WEIGHTS = {
+        'ai_semantic': 40,  # NEW: AI-powered understanding
+        'technical': 25,
+        'industry': 15,
+        'role': 10,
+        'eligibility': 5,
+        'visa': 5
+    }
+    
+    # Section headers that indicate eligibility requirements
+    REQUIREMENT_HEADERS = [
+        'requirements', 'qualifications', 'required qualifications',
+        'minimum qualifications', 'about you', 'you have', 'you are',
+        'what we\'re looking for', 'what you\'ll need', 'must have',
+        'basic qualifications', 'experience required', 'skills required'
+    ]
+    
+    def __init__(self):
+        # Flatten all skills for matching
+        self.all_skills = []
+        for category in HARVEY_PROFILE['skills'].values():
+            self.all_skills.extend([s.lower() for s in category])
+        self.all_skills = list(set(self.all_skills))  # Remove duplicates
+        
+        # Prepare other matching data
+        self.industries = [i.lower() for i in HARVEY_PROFILE['industries']]
+        self.roles = [r.lower() for r in HARVEY_PROFILE['roles']]
+        
+        self.visa_positive = [k.lower() for k in HARVEY_PROFILE['visa']['positive_keywords']]
+        self.visa_negative = [k.lower() for k in HARVEY_PROFILE['visa']['negative_keywords']]
+        
+        # Initialize AI scorer
+        self.ai_scorer = None
+        if AI_AVAILABLE:
+            try:
+                self.ai_scorer = get_ai_scorer()
+            except Exception as e:
+                logger.warning(f"Could not initialize AI scorer: {e}")
+    
+    def score_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Score a job listing and return detailed results
+        NOW WITH AI SEMANTIC UNDERSTANDING!
+        
+        Args:
+            job_data: Dictionary with 'title', 'company', 'description', 'location'
+            
+        Returns:
+            Dictionary with score, breakdown, and reasoning
+        """
+        title = job_data.get('title', '').lower()
+        description = job_data.get('description', '').lower()
+        location = job_data.get('location', '').lower()
+        combined_text = f"{title} {description}"
+        
+        # Extract eligibility sections for focused analysis
+        eligibility_text = self._extract_eligibility_sections(description)
+        
+        # AI SEMANTIC SCORING (NEW!)
+        ai_score = 50.0  # Default if AI not available
+        ai_details = {'method': 'not_available'}
+        if self.ai_scorer and description and len(description) > 50:
+            ai_score, ai_details = self.ai_scorer.score_job_ai(job_data)
+        
+        # Calculate each component
+        tech_score, tech_matches = self._score_technical(combined_text, eligibility_text)
+        industry_score, industry_matches = self._score_industry(combined_text)
+        role_score, role_matches = self._score_role(title, description)
+        eligibility_score, eligibility_matches = self._score_eligibility(eligibility_text)
+        visa_score, visa_status, visa_keywords = self._score_visa(combined_text)
+        
+        # Apply weights (NEW: AI gets 40% weight!)
+        total_score = (
+            (ai_score * self.WEIGHTS['ai_semantic'] / 100) +
+            (tech_score * self.WEIGHTS['technical'] / 100) +
+            (industry_score * self.WEIGHTS['industry'] / 100) +
+            (role_score * self.WEIGHTS['role'] / 100) +
+            (eligibility_score * self.WEIGHTS['eligibility'] / 100) +
+            (visa_score * self.WEIGHTS['visa'] / 100)
+        )
+        
+        # Check location
+        location_ok = self._check_location(location)
+        if not location_ok:
+            total_score *= 0.5  # Penalize non-NYC/remote jobs
+        
+        # Check seniority
+        seniority_ok = self._check_seniority(title, description)
+        if not seniority_ok:
+            total_score *= 0.3  # Heavy penalization for senior roles
+        
+        # Generate reasoning
+        reasoning = self._generate_reasoning(
+            tech_matches, industry_matches, role_matches, eligibility_matches,
+            visa_status, location_ok, seniority_ok, total_score, ai_score, ai_details
+        )
+        
+        return {
+            'fit_score': round(total_score, 1),
+            'breakdown': {
+                'ai_semantic': round(ai_score, 1),
+                'technical': round(tech_score, 1),
+                'industry': round(industry_score, 1),
+                'role': round(role_score, 1),
+                'eligibility': round(eligibility_score, 1),
+                'visa': round(visa_score, 1)
+            },
+            'matches': {
+                'tech': tech_matches[:10],  # Top 10 matches
+                'industry': industry_matches,
+                'role': role_matches,
+                'eligibility': eligibility_matches,
+                'visa_keywords': visa_keywords
+            },
+            'ai_details': ai_details,
+            'visa_status': visa_status,
+            'location_ok': location_ok,
+            'seniority_ok': seniority_ok,
+            'reasoning': reasoning
+        }
+    
+    def _score_technical(self, text: str, eligibility_text: str = "") -> Tuple[float, List[str]]:
+        """
+        Score technical stack match (0-100)
+        Prioritizes matches found in eligibility/requirements sections
+        """
+        matches = []
+        eligibility_matches = []
+        
+        for skill in self.all_skills:
+            # Use word boundaries to avoid partial matches
+            pattern = r'\b' + re.escape(skill) + r'\b'
+            
+            # Check if in eligibility section (higher value)
+            if eligibility_text and re.search(pattern, eligibility_text, re.IGNORECASE):
+                eligibility_matches.append(skill)
+                matches.append(skill)
+            # Check in general text
+            elif re.search(pattern, text, re.IGNORECASE):
+                matches.append(skill)
+        
+        # Calculate score based on number of matches
+        # Bonus for eligibility section matches (actual requirements)
+        if not matches:
+            return 0.0, []
+        
+        num_matches = len(matches)
+        num_eligibility = len(eligibility_matches)
+        
+        # Base score: logarithmic scale
+        if num_matches >= 10:
+            score = 100
+        elif num_matches >= 6:
+            score = 80 + (num_matches - 6) * 5
+        elif num_matches >= 3:
+            score = 50 + (num_matches - 3) * 10
+        else:
+            score = 30 + num_matches * 10
+        
+        # BONUS: +10 points if 3+ skills match in eligibility sections
+        if num_eligibility >= 3:
+            score = min(100, score + 10)
+        
+        return min(score, 100), matches
+    
+    def _score_industry(self, text: str) -> Tuple[float, List[str]]:
+        """
+        Score industry match (0-100)
+        PRIORITY: Med Tech, Ag Tech, Fashion Tech get bonus points
+        """
+        matches = []
+        has_priority_industry = False
+        
+        # Priority industries (Med Tech, Ag Tech, Fashion Tech)
+        priority_keywords = [
+            'medical', 'medtech', 'healthcare', 'healthtech', 'health tech',
+            'clinical', 'medical device', 'diagnostics', 'digital health',
+            'agriculture', 'agtech', 'ag tech', 'agricultural', 'farm tech',
+            'livestock', 'precision agriculture', 'smart farming',
+            'fashion tech', 'fashiontech', 'apparel tech', 'textile tech',
+            'fashion ai', 'fashion technology', 'retail tech'
+        ]
+        
+        for industry in self.industries:
+            pattern = r'\b' + re.escape(industry) + r'\b'
+            if re.search(pattern, text, re.IGNORECASE):
+                matches.append(industry)
+                
+                # Check if this is a priority industry
+                if any(pri in industry.lower() for pri in priority_keywords):
+                    has_priority_industry = True
+        
+        if not matches:
+            return 0.0, []
+        
+        # Calculate base score
+        num_matches = len(matches)
+        if num_matches >= 3:
+            score = 95
+        elif num_matches == 2:
+            score = 75
+        else:
+            score = 55
+        
+        # BONUS: +15 points for priority industries (Med/Ag/Fashion Tech)
+        if has_priority_industry:
+            score = min(100, score + 15)
+        
+        return score, matches
+    
+    def _score_role(self, title: str, description: str) -> Tuple[float, List[str]]:
+        """
+        Score role match (0-100)
+        Weights description MORE than title to avoid misleading title-only matches
+        """
+        title_matches = []
+        description_matches = []
+        
+        # Check both title AND description
+        combined = f"{title} {description}".lower()
+        
+        for role in self.roles:
+            role_lower = role.lower()
+            
+            # Title match
+            if role_lower in title.lower():
+                title_matches.append(role)
+            
+            # Description match (more important - shows actual work)
+            pattern = r'\b' + re.escape(role_lower) + r'\b'
+            if re.search(pattern, description, re.IGNORECASE):
+                description_matches.append(role)
+        
+        # Combine matches (description weighted higher)
+        all_matches = list(set(title_matches + description_matches))
+        
+        if not all_matches:
+            return 0.0, []
+        
+        # Score calculation - favor description matches
+        # Description match: full points
+        # Title-only match: reduced points
+        base_score = 0
+        if description_matches:
+            # Description mentions = strong signal
+            base_score = 90 if len(description_matches) >= 2 else 80
+        elif title_matches:
+            # Title only = weaker signal
+            base_score = 60
+        
+        return base_score, all_matches
+    
+    def _extract_eligibility_sections(self, description: str) -> str:
+        """
+        Extract eligibility/requirements sections from job description
+        These sections contain the actual criteria for evaluating candidates
+        """
+        if not description:
+            return ""
+        
+        eligibility_text = []
+        lines = description.split('\n')
+        capture_mode = False
+        
+        for i, line in enumerate(lines):
+            line_lower = line.lower().strip()
+            
+            # Check if line is a requirement header
+            is_header = any(header in line_lower for header in self.REQUIREMENT_HEADERS)
+            
+            if is_header:
+                capture_mode = True
+                eligibility_text.append(line)
+                continue
+            
+            # Capture lines after header until we hit another section or empty lines
+            if capture_mode:
+                # Stop if we hit another major section header
+                stop_keywords = ['responsibilities', 'what you\'ll do', 'about us', 
+                               'benefits', 'perks', 'our company', 'the role',
+                               'why join', 'what we offer']
+                if any(stop in line_lower for stop in stop_keywords):
+                    capture_mode = False
+                    continue
+                
+                # Stop after multiple empty lines
+                if not line.strip():
+                    # Allow one empty line
+                    if i + 1 < len(lines) and not lines[i + 1].strip():
+                        capture_mode = False
+                    continue
+                
+                eligibility_text.append(line)
+        
+        return ' '.join(eligibility_text)
+    
+    def _score_eligibility(self, eligibility_text: str) -> Tuple[float, Dict[str, Any]]:
+        """
+        Score based on explicit eligibility criteria (0-100)
+        Focuses on required years of experience and must-have skills
+        """
+        if not eligibility_text:
+            return 50.0, {'status': 'no_requirements_found'}  # Neutral if no requirements listed
+        
+        matches = {
+            'experience_match': False,
+            'skills_in_requirements': [],
+            'concerns': []
+        }
+        
+        # Check experience requirements
+        # Harvey has 3-4 years, so look for: 2-5 years, 3+ years, 4+ years
+        exp_patterns = [
+            r'(\d+)\s*[-–to]+\s*(\d+)\s*years',  # Range: 2-5 years
+            r'(\d+)\+?\s*years'  # Minimum: 3+ years
+        ]
+        
+        for pattern in exp_patterns:
+            matches_found = re.findall(pattern, eligibility_text.lower())
+            for match in matches_found:
+                if isinstance(match, tuple):
+                    # Range match
+                    min_years = int(match[0])
+                    max_years = int(match[1]) if match[1] else min_years
+                    
+                    # Harvey has 3-4 years
+                    if min_years <= 4 and max_years >= 3:
+                        matches['experience_match'] = True
+                    elif min_years >= 6:
+                        matches['concerns'].append(f'requires_{min_years}+_years')
+                else:
+                    # Single number match
+                    years = int(match)
+                    if 2 <= years <= 5:
+                        matches['experience_match'] = True
+                    elif years >= 6:
+                        matches['concerns'].append(f'requires_{years}+_years')
+        
+        # Check for Harvey's skills in requirements
+        for skill in self.all_skills:
+            pattern = r'\b' + re.escape(skill) + r'\b'
+            if re.search(pattern, eligibility_text, re.IGNORECASE):
+                matches['skills_in_requirements'].append(skill)
+        
+        # Calculate score
+        score = 50  # Base score
+        
+        # Experience match: +30 points
+        if matches['experience_match']:
+            score += 30
+        
+        # Skills in requirements: +20 points for 3+ matches
+        if len(matches['skills_in_requirements']) >= 3:
+            score += 20
+        elif len(matches['skills_in_requirements']) >= 1:
+            score += 10
+        
+        # Concerns: -40 points for each
+        score -= len(matches['concerns']) * 40
+        
+        return max(0, min(100, score)), matches
+    
+    def _score_visa(self, text: str) -> Tuple[float, str, List[str]]:
+        """
+        Score visa friendliness (0-100)
+        
+        Returns:
+            (score, status, keywords_found)
+            status: 'explicit', 'possible', 'excluded', 'none'
+        """
+        positive_found = []
+        negative_found = []
+        
+        for keyword in self.visa_positive:
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            if re.search(pattern, text, re.IGNORECASE):
+                positive_found.append(keyword)
+        
+        for keyword in self.visa_negative:
+            if keyword in text:
+                negative_found.append(keyword)
+        
+        # Determine status and score
+        if negative_found:
+            return 0.0, 'excluded', negative_found
+        elif positive_found:
+            # E-3 or explicit sponsorship mentioned
+            if any('e-3' in k or 'e3' in k for k in positive_found):
+                return 100.0, 'explicit', positive_found
+            else:
+                return 80.0, 'explicit', positive_found
+        else:
+            # No mention - neutral
+            return 50.0, 'none', []
+    
+    def _check_location(self, location: str) -> bool:
+        """Check if location is acceptable"""
+        if not location:
+            return True  # Unknown location = neutral
+        
+        # Check for NYC
+        nyc_keywords = ['new york', 'nyc', 'manhattan', 'brooklyn', 'queens']
+        if any(kw in location for kw in nyc_keywords):
+            return True
+        
+        # Check for remote
+        remote_keywords = ['remote', 'work from home', 'wfh', 'anywhere']
+        if any(kw in location for kw in remote_keywords):
+            return True
+        
+        return False
+    
+    def _check_seniority(self, title: str, description: str) -> bool:
+        """
+        Check if seniority level is appropriate for Harvey's 3-4 years experience
+        Returns False if role is too senior (6+ years or senior titles)
+        """
+        combined = f"{title} {description}".lower()
+        
+        # Exclude senior-level roles (strict matching)
+        exclude_keywords = HARVEY_PROFILE['seniority']['exclude']
+        for keyword in exclude_keywords:
+            # Use word boundaries for precise matching
+            pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+            if re.search(pattern, combined):
+                return False
+        
+        # Check for experience requirements
+        # Accept: 2-5 years, 3+ years, 4+ years, 3-5 years (Harvey has 3-4 years)
+        # Reject: 6+ years, 7+ years, 8+ years, etc.
+        exp_pattern = r'(\d+)\+?\s*years'
+        exp_matches = re.findall(exp_pattern, combined)
+        for years in exp_matches:
+            years_int = int(years)
+            # Reject if requiring MORE than 5 years
+            if years_int >= 6:
+                return False
+            # Also check for ranges like "5-7 years" - reject if minimum is 6+
+            range_pattern = rf'{years}\s*[-–to]\s*(\d+)\s*years'
+            range_match = re.search(range_pattern, combined)
+            if range_match and years_int >= 6:
+                return False
+        
+        return True
+    
+    def _generate_reasoning(
+        self,
+        tech_matches: List[str],
+        industry_matches: List[str],
+        role_matches: List[str],
+        eligibility_matches: Dict[str, Any],
+        visa_status: str,
+        location_ok: bool,
+        seniority_ok: bool,
+        total_score: float,
+        ai_score: float = 50.0,
+        ai_details: Dict[str, Any] = None
+    ) -> str:
+        """Generate human-readable reasoning for the score"""
+        reasons = []
+        
+        # AI insight (NEW!)
+        if ai_details and ai_details.get('method') == 'sentence_transformer':
+            similarity = ai_details.get('similarity', 0)
+            if similarity > 0.4:
+                reasons.append(f"🤖 Strong AI match (semantic similarity: {similarity:.2f})")
+            elif similarity > 0.25:
+                reasons.append(f"🤖 Moderate AI match (similarity: {similarity:.2f})")
+        
+        # Priority industry check (Med/Ag/Fashion Tech)
+        priority_keywords = ['medical', 'medtech', 'healthcare', 'healthtech', 
+                           'agriculture', 'agtech', 'ag tech', 'farm',
+                           'fashion tech', 'fashiontech', 'apparel']
+        has_priority = any(
+            any(pri in ind.lower() for pri in priority_keywords)
+            for ind in industry_matches
+        )
+        
+        # Technical fit
+        if tech_matches:
+            top_techs = ', '.join(tech_matches[:5])
+            reasons.append(f"Strong technical match: {top_techs}")
+        else:
+            reasons.append("Limited technical stack alignment")
+        
+        # Industry fit (highlight priority industries!)
+        if industry_matches:
+            industries = ', '.join(industry_matches)
+            if has_priority:
+                reasons.append(f"🎯 PRIORITY INDUSTRY: {industries}")
+            else:
+                reasons.append(f"Relevant industry: {industries}")
+        else:
+            reasons.append("No direct industry match")
+        
+        # Role fit
+        if role_matches:
+            roles = ', '.join(role_matches)
+            reasons.append(f"Role alignment: {roles}")
+        
+        # Eligibility fit (NEW - focuses on requirements sections)
+        if isinstance(eligibility_matches, dict):
+            if eligibility_matches.get('experience_match'):
+                reasons.append("✓ Experience level matches requirements")
+            if eligibility_matches.get('skills_in_requirements'):
+                num_skills = len(eligibility_matches['skills_in_requirements'])
+                reasons.append(f"✓ {num_skills} required skills matched")
+            if eligibility_matches.get('concerns'):
+                for concern in eligibility_matches['concerns']:
+                    reasons.append(f"⚠ {concern.replace('_', ' ')}")
+        
+        # Visa
+        if visa_status == 'explicit':
+            reasons.append("✓ Visa sponsorship mentioned")
+        elif visa_status == 'excluded':
+            reasons.append("✗ No sponsorship available")
+        else:
+            reasons.append("Visa sponsorship unclear - needs inquiry")
+        
+        # Location
+        if not location_ok:
+            reasons.append("⚠ Location may not be ideal")
+        
+        # Seniority
+        if not seniority_ok:
+            reasons.append("⚠ Requires senior-level experience - may be too advanced")
+        
+        # Overall assessment
+        if total_score >= 80:
+            assessment = "🌟 Excellent fit - highly recommended"
+        elif total_score >= 70:
+            assessment = "✨ Strong fit - worth applying"
+        elif total_score >= 50:
+            assessment = "Moderate fit - consider carefully"
+        else:
+            assessment = "Weak fit - likely not ideal"
+        
+        return f"{assessment}. " + ". ".join(reasons) + "."
+
+
+# Convenience function
+def score_job(job_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Score a job listing"""
+    scorer = JobScorer()
+    return scorer.score_job(job_data)
+
+
+if __name__ == "__main__":
+    # Test the scorer
+    test_job = {
+        'title': 'Machine Learning Engineer',
+        'company': 'FashionTech Startup',
+        'description': '''
+        We're looking for an ML Engineer to build LLM-powered features for our 
+        sustainable fashion marketplace. You'll work with Python, AWS, and modern 
+        ML frameworks. Experience with NLP and computer vision is a plus.
+        
+        We offer visa sponsorship including E-3 visas.
+        
+        Requirements:
+        - 2-3 years experience with Python and machine learning
+        - Strong understanding of NLP and LLMs
+        - AWS experience preferred
+        ''',
+        'location': 'New York, NY'
+    }
+    
+    result = score_job(test_job)
+    print(f"Fit Score: {result['fit_score']}/100")
+    print(f"\nBreakdown:")
+    for category, score in result['breakdown'].items():
+        print(f"  {category}: {score}")
+    print(f"\nReasoning: {result['reasoning']}")

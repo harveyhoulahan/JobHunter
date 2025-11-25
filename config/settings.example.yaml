@@ -1,0 +1,183 @@
+# JobHunter Configuration
+# Copy this to settings.yaml and customize
+
+# User Profile
+profile:
+  name: "Harvey J. Houlahan"
+  location:
+    preferred: ["New York City", "NYC", "New York"]
+    remote_ok: true
+  seniority:
+    min: "Junior"
+    max: "Mid"
+    exclude: ["Senior", "Staff", "Principal", "Lead"]
+  visa:
+    required: true
+    type: "E-3"
+    keywords: ["E-3", "E3", "visa sponsorship", "LCA", "open to sponsorship"]
+    
+# Alert Configuration
+alerts:
+  email:
+    enabled: true
+    recipients:
+      - "harvey@example.com"
+  sms:
+    enabled: false
+    recipients:
+      - "+1234567890"
+  thresholds:
+    immediate: 70  # Send alert immediately
+    digest: 50     # Include in daily digest
+    store_only: 0  # Below this, just store
+  digest_time: "09:00"  # Daily digest send time (24h format)
+
+# Scheduling
+schedule:
+  interval_hours: 3
+  max_jobs_per_run: 100
+  timeout_minutes: 30
+
+# Job Sources
+sources:
+  linkedin:
+    enabled: true
+    search_terms:
+      - "Machine Learning Engineer NYC"
+      - "Software Engineer NYC"
+      - "AI Engineer NYC"
+      - "Full Stack Engineer NYC"
+    filters:
+      posted_within_days: 7
+      
+  indeed:
+    enabled: true
+    search_terms:
+      - "ML Engineer"
+      - "Software Engineer"
+      - "AI Engineer"
+    location: "New York, NY"
+    filters:
+      posted_within_days: 7
+      
+  ziprecruiter:
+    enabled: true
+    search_terms:
+      - "Machine Learning Engineer"
+      - "Software Engineer"
+    location: "New York, NY"
+    
+  angellist:
+    enabled: true
+    search_terms:
+      - "Engineer"
+    filters:
+      location: "New York"
+      role_types: ["Engineering", "Machine Learning"]
+      
+  builtin_nyc:
+    enabled: true
+    categories: ["Engineering", "Data Science", "Machine Learning"]
+
+# Scoring Weights (must sum to 100)
+scoring:
+  weights:
+    technical_stack: 40
+    industry_match: 25
+    role_match: 20
+    visa_friendliness: 15
+    
+  technical_keywords:
+    high_value:  # 1.0x multiplier
+      - "Python"
+      - "Machine Learning"
+      - "ML"
+      - "AI"
+      - "LLM"
+      - "NLP"
+      - "Swift"
+      - "SwiftUI"
+      - "iOS"
+      - "AWS"
+      - "TypeScript"
+      - "React"
+      - "Next.js"
+    medium_value:  # 0.7x multiplier
+      - "C#"
+      - "SQL"
+      - "DynamoDB"
+      - "Lambda"
+      - "S3"
+      - "Docker"
+      - "Kubernetes"
+      - "Node.js"
+    low_value:  # 0.4x multiplier
+      - "JavaScript"
+      - "REST API"
+      - "Git"
+      - "CI/CD"
+      
+  industry_keywords:
+    fashion_tech:
+      - "fashion"
+      - "apparel"
+      - "retail tech"
+      - "e-commerce fashion"
+    sustainability:
+      - "sustainability"
+      - "climate"
+      - "supply chain transparency"
+      - "ESG"
+      - "carbon"
+    healthcare:
+      - "healthcare"
+      - "healthtech"
+      - "medical"
+      - "biotech"
+      - "clinical"
+    ai_ml:
+      - "artificial intelligence"
+      - "machine learning"
+      - "deep learning"
+      - "computer vision"
+      - "NLP"
+    marketplace:
+      - "marketplace"
+      - "platform"
+      - "two-sided market"
+      
+  role_keywords:
+    ml_engineer:
+      - "Machine Learning Engineer"
+      - "ML Engineer"
+      - "AI Engineer"
+    software_engineer:
+      - "Software Engineer"
+      - "Backend Engineer"
+      - "Full Stack Engineer"
+    ios_engineer:
+      - "iOS Engineer"
+      - "Mobile Engineer"
+      - "Swift Developer"
+
+# Deduplication
+deduplication:
+  enabled: true
+  similarity_threshold: 0.85  # 85% similar = duplicate
+  fields:
+    - title
+    - company
+    - description_snippet
+
+# Database
+database:
+  path: "data/jobhunter.db"
+  backup_enabled: true
+  backup_interval_days: 7
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/jobhunter.log"
+  max_size_mb: 100
+  backup_count: 5
