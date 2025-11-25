@@ -14,10 +14,16 @@ class IndeedScraper(BaseScraper):
     def __init__(self):
         super().__init__("indeed")
         self.base_url = "https://www.indeed.com"
+        self.user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        self.request_delay = 3
     
     def search_jobs(self, search_terms: List[str], location: str = "New York, NY") -> List[Dict[str, Any]]:
         """Search Indeed for jobs"""
         all_jobs = []
+        
+        if not search_terms:
+            logger.info("No search terms provided for Indeed; skipping")
+            return []
         
         for term in search_terms:
             try:
@@ -132,6 +138,16 @@ class IndeedScraper(BaseScraper):
             'description': self.clean_description(description),
             'source': self.source_name
         }
+
+    def fetch_single_job_description(self, job_url: str) -> str:
+        """Fetch full job description for a single job (used post-dedup)"""
+        try:
+            html = self.fetch_page(job_url)
+            parsed = self.parse_job_listing(html, job_url)
+            return parsed.get('description', '')
+        except Exception as e:
+            logger.debug(f"Error fetching Indeed description for {job_url}: {e}")
+            return ""
 
 
 if __name__ == "__main__":

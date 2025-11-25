@@ -198,63 +198,84 @@ class JobApplicator:
         
         job_title = job_data.get('title', 'the position')
         company = job_data.get('company', 'your company')
-        location = job_data.get('location', 'New York, NY 10036')
-        
-        # Extract relevant experience based on job description
+        location = job_data.get('location', 'New York, NY')
         description = job_data.get('description', '').lower()
         
-        # Determine which experience to highlight based on job focus
-        primary_exp = ""
-        secondary_exp = ""
+        # Get the AI-generated reasoning for personalization
+        reasoning = score_result.get('reasoning', '')
         
-        if any(kw in description for kw in ['ml', 'machine learning', 'ai', 'llm', 'nlp']):
-            primary_exp = "At FibreTrace I developed a system that integrated physical-world fibre tracking with digital analytics at enterprise scale"
-            secondary_exp = "and at Friday Technologies I architected semantic-search and AI-driven backend services"
-        elif any(kw in description for kw in ['backend', 'api', 'pipeline', 'data']):
-            primary_exp = "At FibreTrace I built data-processing pipelines that translate raw input into user-focused features"
-            secondary_exp = "and at Friday Technologies I architected scalable backend services that handle production traffic"
-        elif any(kw in description for kw in ['fullstack', 'full-stack', 'frontend']):
-            primary_exp = "At Friday Technologies I built production-grade mobile and web applications with Core ML integration"
-            secondary_exp = "while at FibreTrace I developed enterprise-scale systems trusted by Target and Cargill"
-        else:
-            # Default for ML/backend roles
-            primary_exp = "At FibreTrace I developed a system that integrated physical-world fibre tracking with digital analytics at enterprise scale"
-            secondary_exp = "and at Friday Technologies I architected semantic-search and AI-driven backend services"
+        # Extract key technologies/skills from description
+        tech_stack = []
+        if 'python' in description:
+            tech_stack.append('Python')
+        if any(kw in description for kw in ['machine learning', 'ml', 'ai']):
+            tech_stack.append('ML/AI')
+        if any(kw in description for kw in ['llm', 'gpt', 'language model']):
+            tech_stack.append('LLMs')
+        if any(kw in description for kw in ['aws', 'cloud', 'kubernetes']):
+            tech_stack.append('cloud infrastructure')
+        if any(kw in description for kw in ['api', 'rest', 'backend']):
+            tech_stack.append('backend systems')
+        if any(kw in description for kw in ['data pipeline', 'etl', 'spark']):
+            tech_stack.append('data pipelines')
         
-        # Build the compelling opening based on role type
-        if any(kw in job_title.lower() for kw in ['machine learning', 'ml engineer', 'ai engineer']):
-            opening = f"I am eager to contribute to the {job_title} position; my experience in constructing ML and data-processing pipelines that translate raw input into user-focused features, together with a strong foundation in backend engineering, positions me well to support your"
-            mission_word = "mission"
-        elif any(kw in job_title.lower() for kw in ['backend', 'software engineer', 'full stack']):
-            opening = f"I am eager to contribute to the {job_title} position; my experience building scalable systems and data pipelines, together with a strong foundation in backend engineering and ML, positions me well to support your"
-            mission_word = "engineering goals"
+        tech_mention = f" with {', '.join(tech_stack[:3])}" if tech_stack else ""
+        
+        # Craft opening paragraph based on role type and reasoning
+        if any(kw in job_title.lower() for kw in ['machine learning', 'ml engineer', 'ai engineer', 'applied ai']):
+            opening = f"I am writing to express my strong interest in the {job_title} role at {company}. Having built production ML systems at FibreTrace that process millions of data points{tech_mention}, I'm eager to bring that experience to your team's AI initiatives."
+        elif any(kw in job_title.lower() for kw in ['backend', 'software engineer', 'platform']):
+            opening = f"I am writing to express my interest in the {job_title} position at {company}. My experience building scalable backend systems and data-processing pipelines at FibreTrace and Friday Technologies{tech_mention} aligns well with your technical requirements."
         elif any(kw in job_title.lower() for kw in ['data engineer', 'data scientist', 'analytics']):
-            opening = f"I am eager to contribute to the {job_title} position; my experience constructing data-processing pipelines and analytics systems, together with a strong foundation in ML and backend engineering, positions me well to support your"
-            mission_word = "data platform"
+            opening = f"I am excited to apply for the {job_title} role at {company}. At FibreTrace, I developed enterprise-scale data pipelines trusted by Target and Cargill{tech_mention}, and I'm eager to apply that experience to your data platform."
+        elif any(kw in job_title.lower() for kw in ['full stack', 'fullstack', 'frontend']):
+            opening = f"I am writing to express my interest in the {job_title} position at {company}. My experience spans full-stack development, from production mobile apps at Friday Technologies to enterprise backend systems at FibreTrace{tech_mention}."
         else:
-            opening = f"I am eager to contribute to the {job_title} position; my experience in building production systems, together with a strong foundation in backend engineering and ML, positions me well to support your"
-            mission_word = "technical goals"
+            opening = f"I am writing to apply for the {job_title} role at {company}. My background in building production systems{tech_mention} positions me well to contribute to your engineering team."
+        
+        # Build middle paragraph highlighting specific relevant experience
+        middle = ""
+        if any(kw in description for kw in ['ml', 'machine learning', 'ai', 'llm', 'deep learning']):
+            middle = "At FibreTrace, I developed ML-driven traceability systems that integrated physical-world tracking with digital analytics at enterprise scale. At Friday Technologies, I architected semantic search and AI-powered backend services using modern ML frameworks. I thrive in environments where experimentation, iteration, and production-ready code intersect to create real-world impact."
+        elif any(kw in description for kw in ['backend', 'api', 'microservices', 'distributed']):
+            middle = "At FibreTrace, I built backend systems that handle enterprise-level data processing for clients like Target and Cargill. At Friday Technologies, I designed and deployed scalable APIs and services that power production applications. I excel at writing clean, maintainable code that balances performance with reliability."
+        elif any(kw in description for kw in ['data', 'pipeline', 'etl', 'analytics', 'warehouse']):
+            middle = "At FibreTrace, I constructed data-processing pipelines that transform raw sensor data into actionable insights at scale. This work required careful attention to data quality, pipeline reliability, and performance optimization. I'm comfortable working across the full data stack, from ingestion to visualization."
+        else:
+            middle = "At FibreTrace, I developed systems that integrated hardware sensors with cloud analytics, requiring deep technical expertise across the stack. At Friday Technologies, I built production mobile and web applications with AI integration. I'm passionate about writing robust, well-tested code that solves real problems."
+        
+        # Add company-specific touch if possible (look for keywords)
+        company_touch = ""
+        if 'wordpress' in description or 'automattic' in company.lower():
+            company_touch = f"\n\n{company}'s commitment to open-source and distributed work resonates with my engineering philosophy. I've contributed to open-source projects and thrive in collaborative, remote-friendly environments."
+        elif 'startup' in description or 'founding' in job_title.lower():
+            company_touch = f"\n\nI'm particularly drawn to {company}'s early-stage environment where individual contributors can have outsized impact. I've worked in both startups and enterprise settings, and I bring that versatility to fast-moving teams."
         
         cover_letter = f"""Harvey Houlahan
 harveyhoulahan@outlook.com
 www.hjhportfolio.com
-[{datetime.now().strftime('%m/%d/%y')}]
+{datetime.now().strftime('%B %d, %Y')}
 
-Hiring Team
+Hiring Manager
 {company}
 {location}
 
-Dear {company},
+Dear {company} Hiring Team,
 
-{opening} {mission_word}. {primary_exp}, {secondary_exp}. I thrive in settings where rigorous experimentation, iterative development and production readiness converge to deliver tangible impact.
 
-I am authorized to work in the U.S. under the Australian E-3 visa, which does not require H-1B sponsorship. I am based in New York and excited by the opportunity to contribute to your AI-driven operations at scale.
+{opening}
 
-I live in New York and can commit to onsite work in Midtown 5 days a week. As an Australian citizen, I qualify for the E-3 visa, a straightforward process that requires only the Labor Condition Application (LCA); I can start the paperwork right away if selected.
 
-Thank you for reviewing my application. I would appreciate the chance to talk about how my skills could support your platform.
+{middle}{company_touch}
 
-Sincerely,
+
+As an Australian citizen, I'm authorized to work in the U.S. under the E-3 visa—a streamlined process that doesn't require H-1B sponsorship and only needs a Labor Condition Application (LCA). I'm based in New York and ready to start immediately.
+
+
+Thank you for considering my application. I'd welcome the opportunity to discuss how my experience building production ML and backend systems could contribute to {company}'s goals.
+
+
+Best regards,
 
 Harvey J. Houlahan"""
         return cover_letter
@@ -323,7 +344,8 @@ Harvey J. Houlahan"""
             'skipped_low_score': 0,
             'skipped_visa': 0,
             'skipped_seniority': 0,
-            'skipped_other': 0
+            'skipped_other': 0,
+            'applications': []  # Add list of prepared applications
         }
         
         for job in jobs:
@@ -356,6 +378,7 @@ Harvey J. Houlahan"""
             application = self.prepare_application(job, score_result)
             if application:
                 stats['applications_prepared'] += 1
+                stats['applications'].append(application)  # Collect applications
             else:
                 stats['skipped_other'] += 1
         

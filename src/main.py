@@ -19,6 +19,8 @@ from src.profile import HARVEY_PROFILE
 from src.scoring.engine import JobScorer
 from src.scrapers.linkedin import LinkedInScraper
 from src.scrapers.builtin import BuiltInNYCScraper
+from src.scrapers.indeed import IndeedScraper
+from src.scrapers.technyc import TechNYCScraper
 from src.scrapers.ziprecruiter import ZipRecruiterScraper
 from src.scrapers.angellist import AngelListScraper
 from src.scrapers.glassdoor import GlassdoorScraper
@@ -43,10 +45,13 @@ class JobHunter:
         
         # Initialize scrapers - ONLY WORKING SCRAPERS ENABLED
         self.scrapers = {
-            'linkedin': LinkedInScraper(),       # 7 searches × 8 jobs = 56 jobs (sortBy=DD - most recent)
-            'builtin': BuiltInNYCScraper(),      # 5 searches × 8 jobs = 40 jobs (sort=most_recent)
-            # Disabled: Anti-scraping protection on these sites
-            # 'ziprecruiter': ZipRecruiterScraper(),
+            'linkedin': LinkedInScraper(),       # ~432 jobs per run
+            'builtin': BuiltInNYCScraper(),      # ~150 jobs per run
+            'ziprecruiter': ZipRecruiterScraper(),  # NYC jobs
+            # Disabled: Need to update selectors for new site structure
+            # 'technyc': TechNYCScraper(),       # Getro-based platform, complex scraping
+            # Disabled: Anti-scraping protection
+            # 'indeed': IndeedScraper(),         # Blocked with 403 errors
             # 'angellist': AngelListScraper(),
             # 'glassdoor': GlassdoorScraper(),
         }
@@ -72,6 +77,7 @@ class JobHunter:
                     'Machine Learning Engineer',
                     'ML Engineer',
                     'AI Engineer',
+                    'Software Engineer',
                     'Backend Engineer Python',
                     'Data Engineer Python',
                     'Analytics Engineer',
@@ -79,20 +85,31 @@ class JobHunter:
                 ],
                 'builtin': [
                     'machine learning',
+                    'software engineer',
                     'backend engineer',
                     'ai engineer',
                     'python engineer',
                     'analytics engineer'
                 ],
+                'indeed': [
+                    'Machine Learning Engineer',
+                    'AI Engineer',
+                    'Software Engineer',
+                    'Backend Engineer Python',
+                    'Data Engineer',
+                    'Analytics Engineer'
+                ],
                 'ziprecruiter': [
                     'Machine Learning Engineer',
                     'AI Engineer',
+                    'Software Engineer',
                     'Backend Engineer',
                     'Python Developer',
                     'Data Engineer'
                 ],
                 'angellist': [
                     'Machine Learning Engineer',
+                    'Software Engineer',
                     'Backend Engineer',
                     'AI Engineer',
                     'Full Stack Engineer',
@@ -101,12 +118,27 @@ class JobHunter:
                 'glassdoor': [
                     'Machine Learning Engineer',
                     'AI Engineer',
+                    'Software Engineer',
                     'Backend Engineer Python',
                     'Data Engineer',
                     'MLOps Engineer'
+                ],
+                'technyc': [
+                    'Machine Learning Engineer',
+                    'Data Engineer',
+                    'AI Engineer',
+                    'Backend Engineer',
+                    'Software Engineer',
+                    'Full Stack Engineer',
+                    'Analytics Engineer',
+                    'MLOps'
                 ]
             },
-            'location': 'New York, NY',
+            'locations': [
+                'New York, NY',
+                'Los Angeles, CA',
+                'Remote'
+            ],
             'max_jobs_per_source': 50
         }
     
@@ -164,6 +196,10 @@ class JobHunter:
                 scraper = self.scrapers.get('linkedin')
             elif source == 'builtin_nyc':
                 scraper = self.scrapers.get('builtin')
+            elif source == 'indeed':
+                scraper = self.scrapers.get('indeed')
+            elif source == 'technyc':
+                scraper = self.scrapers.get('technyc')
             
             # Fetch description for this specific job
             if scraper and hasattr(scraper, 'fetch_single_job_description'):
@@ -222,6 +258,7 @@ class JobHunter:
             logger.info(f"Found {stats['high_matches']} high-match jobs, sent {stats['alerts_sent']} alerts")
         
         # 6. Auto-apply to jobs with score >= 50%
+        applications_prepared = []
         if self.config.get('auto_apply', {}).get('enabled', False):
             try:
                 logger.info("Processing jobs for auto-apply...")
@@ -256,6 +293,7 @@ class JobHunter:
                     
                     stats['cvs_generated'] = apply_results.get('applications_prepared', 0)
                     stats['jobs_skipped'] = apply_results.get('total_jobs', 0) - stats['cvs_generated']
+                    applications_prepared = apply_results.get('applications', [])
                     
                     logger.info(
                         f"Auto-apply: Generated {stats['cvs_generated']} CVs, "
@@ -268,6 +306,27 @@ class JobHunter:
             except Exception as e:
                 logger.error(f"Error in auto-apply: {e}")
                 stats['cvs_generated'] = 0
+        
+        # 7. Email CVs to user if any were generated
+        if applications_prepared:
+            try:
+                from src.applying.email_sender import ApplicationEmailer
+                
+                emailer = ApplicationEmailer()
+                email_sent = emailer.send_application_batch(
+                    applications=applications_prepared,
+                    summary_stats=stats
+                )
+                
+                if email_sent:
+                    logger.info(f"✓ Emailed {len(applications_prepared)} CVs to user")
+                    stats['email_sent'] = True
+                else:
+                    logger.info("CV email disabled or failed")
+                    stats['email_sent'] = False
+            except Exception as e:
+                logger.error(f"Error sending CV email: {e}")
+                stats['email_sent'] = False
                 stats['jobs_skipped'] = 0
         
         # 7. Log search history
@@ -285,37 +344,42 @@ class JobHunter:
         return stats
     
     def _scrape_all_sources(self) -> List[Dict[str, Any]]:
-        """Scrape jobs from all enabled sources"""
+        """Scrape jobs from all enabled sources across all configured locations"""
         all_jobs = []
         
-        for source_name, scraper in self.scrapers.items():
-            try:
-                logger.info(f"Scraping {source_name}...")
-                
-                search_terms = self.config['search_terms'].get(source_name, [])
-                location = self.config['location']
-                
-                jobs = scraper.search_jobs(search_terms, location)
-                all_jobs.extend(jobs)
-                
-                logger.info(f"Got {len(jobs)} jobs from {source_name}")
-                
-                # Log individual source history
-                self.db.add_search_history({
-                    'source': source_name,
-                    'jobs_found': len(jobs),
-                    'success': True
-                })
-                
-            except Exception as e:
-                logger.error(f"Error scraping {source_name}: {e}")
-                self.db.add_search_history({
-                    'source': source_name,
-                    'jobs_found': 0,
-                    'success': False,
-                    'errors': str(e)
-                })
+        locations = self.config.get('locations', ['New York, NY'])  # Default to NYC if not specified
         
+        for location in locations:
+            logger.info(f"Scraping jobs for location: {location}")
+            
+            for source_name, scraper in self.scrapers.items():
+                try:
+                    logger.info(f"  → {source_name} ({location})...")
+                    
+                    search_terms = self.config['search_terms'].get(source_name, [])
+                    
+                    jobs = scraper.search_jobs(search_terms, location)
+                    all_jobs.extend(jobs)
+                    
+                    logger.info(f"    Got {len(jobs)} jobs from {source_name} in {location}")
+                    
+                    # Log individual source+location history
+                    self.db.add_search_history({
+                        'source': f"{source_name}_{location.replace(', ', '_').replace(' ', '_')}",
+                        'jobs_found': len(jobs),
+                        'success': True
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"  ✗ Error scraping {source_name} ({location}): {e}")
+                    self.db.add_search_history({
+                        'source': f"{source_name}_{location.replace(', ', '_').replace(' ', '_')}",
+                        'jobs_found': 0,
+                        'success': False,
+                        'errors': str(e)
+                    })
+        
+        logger.info(f"Total jobs scraped across all locations: {len(all_jobs)}")
         return all_jobs
     
     def get_top_matches(self, limit: int = 10) -> List[Dict[str, Any]]:

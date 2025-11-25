@@ -74,7 +74,7 @@ def view_top_jobs(limit: int = 10):
         jobs = session.query(Job).order_by(Job.fit_score.desc()).limit(limit).all()
         
         print(f"\n🎯 Top {limit} Jobs:")
-        print("=" * 80)
+        print("=" * 90)
         for i, job in enumerate(jobs, 1):
             status_emoji = {
                 'new': '🆕',
@@ -88,6 +88,7 @@ def view_top_jobs(limit: int = 10):
             
             print(f"{i}. [{job.fit_score:.1f}] {status_emoji} {job.title}")
             print(f"   {job.company} - {job.location or 'Remote'}")
+            print(f"   ID: {job.id}")  # Show job ID for marking as applied
             if job.cv_version:
                 print(f"   📄 Applied with: {job.cv_version}")
             print(f"   🔗 {job.url}")

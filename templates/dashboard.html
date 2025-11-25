@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobHunter Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="brand">JobHunter</div>
+            <div class="nav">
+                <a href="/">All Jobs</a>
+                <a href="/applied">My Applications</a>
+                <a href="/stats">Statistics</a>
+            </div>
+        </div>
+
+        <section class="hero">
+            <div class="hero-card">
+                <div class="pill">Live board · {{ stats.total_jobs }} tracked</div>
+                <h1>Match, apply, and track without breaking flow.</h1>
+                <p>Highest-scoring roles surface first. Mark applied, update status, and move on—no spreadsheets, no guesswork.</p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="#job-list">Jump to matches</a>
+                    <a class="btn btn-ghost" href="/applied">Review applications</a>
+                    <button class="btn btn-outline" id="runScrapeBtn">Run scrape now</button>
+                </div>
+            </div>
+            <div class="hero-aside">
+                <div>
+                    <div class="label">Ready to apply</div>
+                    <div class="stat-pill">{{ stats.applied }} sent · {{ "%.1f"|format(stats.response_rate) }}% response</div>
+                </div>
+                <div>
+                    <div class="label">Interviews in play</div>
+                    <div class="stat-pill">{{ stats.interviews }} interviews · {{ stats.offers }} offers</div>
+                </div>
+                <div>
+                    <div class="label">New jobs today</div>
+                    <div class="stat-pill">{{ stats.total_jobs - stats.applied }} still open</div>
+                </div>
+                <div>
+                    <div class="label">Last scrape</div>
+                    {% if last_scrape %}
+                        <div class="stat-pill">
+                            {{ last_scrape.timestamp.strftime('%b %d, %I:%M %p') }} · {{ last_scrape.jobs_new or 0 }} new / {{ last_scrape.jobs_found or 0 }} found · {{ "%.1fs"|format(last_scrape.duration or 0) }}
+                        </div>
+                    {% else %}
+                        <div class="stat-pill">Not run yet</div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <section class="filters">
+            <div class="filters-row">
+                <div>
+                    <div class="label">Min fit score</div>
+                    <input id="scoreFilter" class="range" type="range" min="0" max="100" step="5" value="50">
+                    <div class="subtle">Showing ≥ <span id="scoreValue">50</span>%</div>
+                </div>
+                <div>
+                    <div class="label">Status</div>
+                    <select id="statusFilter" class="select">
+                        <option value="all">All</option>
+                        <option value="new">New</option>
+                        <option value="applied">Applied</option>
+                        <option value="phone_screen">Phone screen</option>
+                        <option value="interview">Interview</option>
+                        <option value="offer">Offer</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="withdrawn">Withdrawn</option>
+                    </select>
+                </div>
+                <div>
+                    <div class="label">Search title/company</div>
+                    <input id="searchFilter" class="input" type="text" placeholder="e.g. ML Engineer, fintech">
+                </div>
+                <div class="switch">
+                    <input id="remoteToggle" type="checkbox">
+                    <label for="remoteToggle">Remote only</label>
+                </div>
+            </div>
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 4px;">
+                <span class="subtle"><span id="visibleCount">{{ jobs|length }}</span> roles match filters.</span>
+                <button id="resetFilters" class="btn btn-outline btn-small">Reset filters</button>
+            </div>
+        </section>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Jobs</h3>
+                <div class="value">{{ stats.total_jobs }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Applied</h3>
+                <div class="value">{{ stats.applied }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Interviews</h3>
+                <div class="value">{{ stats.interviews }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Offers</h3>
+                <div class="value">{{ stats.offers }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Response Rate</h3>
+                <div class="value">{{ "%.1f"|format(stats.response_rate) }}%</div>
+            </div>
+        </div>
+
+        <section class="panel" id="job-list">
+            <div class="section-title">
+                <div>
+                    <h2>Top matched jobs</h2>
+                    <div class="subtle">Sorted by fit score. Click through to apply, then mark it here.</div>
+                </div>
+                <div class="pill">Auto-apply ready ≥50%</div>
+            </div>
+
+            <div class="jobs-grid">
+                {% for job in jobs %}
+                <div class="job-card"
+                     data-score="{{ job.fit_score or 0 }}"
+                     data-status="{{ job.status or 'new' }}"
+                     data-remote="{{ 'true' if job.remote else 'false' }}"
+                     data-text="{{ (job.title ~ ' ' ~ job.company)|lower }}">
+                    <div class="job-header">
+                        <div>
+                            <div class="job-title">{{ job.title }}</div>
+                            <div class="job-company">{{ job.company }}</div>
+                        </div>
+                        <div class="score-badge {% if job.fit_score >= 80 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
+                            {{ "%.1f"|format(job.fit_score) }}%
+                        </div>
+                    </div>
+
+                    <div class="job-meta">
+                        <span>📍 {{ job.location or 'Remote' }}</span>
+                        <span class="status-badge status-{{ job.status or 'new' }}">
+                            {{ (job.status or 'new').replace('_', ' ') }}
+                        </span>
+                        <span>🔗 {{ job.source or 'unknown' }}</span>
+                        {% if job.posted_date %}<span>📅 {{ job.posted_date }}</span>{% endif %}
+                        {% if job.applied_date %}<span>✅ Applied {{ job.applied_date.strftime('%b %d') }}</span>{% endif %}
+                    </div>
+
+                    <div class="tags">
+                        {% if job.role_matches %}
+                            <span class="chip">{{ job.role_matches[0] }}</span>
+                        {% endif %}
+                        {% if job.tech_matches %}
+                            {% for tech in job.tech_matches[:3] %}
+                                <span class="chip">{{ tech }}</span>
+                            {% endfor %}
+                        {% endif %}
+                        {% if job.industry_matches %}
+                            <span class="chip">{{ job.industry_matches[0] }}</span>
+                        {% endif %}
+                        {% if job.remote %}
+                            <span class="chip">Remote</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="job-reasoning">
+                        {{ (job.reasoning or 'This role matches your skills and industry preferences.')[:180] }}{% if (job.reasoning or '')|length > 180 %}…{% endif %}
+                    </div>
+
+                    {% if job.cv_version %}
+                    <div class="meta-quiet">📄 CV used: {{ job.cv_version }}</div>
+                    {% endif %}
+
+                    <div class="job-actions">
+                        <a href="{{ job.url }}" target="_blank" class="btn btn-primary btn-small">View job →</a>
+
+                        {% if not job.applied_date %}
+                        <button class="btn btn-surface btn-small mark-applied-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}">
+                            ✓ Mark as applied
+                        </button>
+                        {% else %}
+                        <button class="btn btn-surface btn-small update-status-btn" data-job-id="{{ job.id }}">
+                            Update status
+                        </button>
+                        {% endif %}
+
+                        <button class="btn btn-surface btn-small view-cover-letter-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}" data-title="{{ job.title }}">
+                            📄 Cover Letter
+                        </button>
+
+                        <a href="/jobs/{{ job.id }}" class="btn btn-outline btn-small">Details</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div id="emptyState" class="empty-state" style="display:none;">No roles match these filters yet.</div>
+        </section>
+    </div>
+
+    <!-- Mark Applied Modal -->
+    <div id="applyModal" class="modal">
+        <div class="modal-content">
+            <h3>Mark as Applied</h3>
+            <div class="form-group">
+                <label>CV Used</label>
+                <input type="text" id="cvVersion" placeholder="e.g., Cohere_ML_Engineer_Resume.pdf">
+            </div>
+            <div class="form-group">
+                <label>Application Method</label>
+                <select id="appMethod">
+                    <option value="linkedin">LinkedIn</option>
+                    <option value="company_site">Company Website</option>
+                    <option value="email">Email</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="btn btn-primary" onclick="submitApplied()">Submit</button>
+                <button class="btn btn-outline" onclick="closeModal('applyModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Status Modal -->
+    <div id="statusModal" class="modal">
+        <div class="modal-content">
+            <h3>Update Job Status</h3>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="newStatus">
+                    <option value="applied">Applied</option>
+                    <option value="phone_screen">Phone Screen</option>
+                    <option value="interview">Interview</option>
+                    <option value="offer">Offer</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="withdrawn">Withdrawn</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="statusNotes" placeholder="Add any notes..."></textarea>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="btn btn-primary" onclick="submitStatus()">Update</button>
+                <button class="btn btn-outline" onclick="closeModal('statusModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cover Letter Modal -->
+    <div id="coverLetterModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <h3>Cover Letter</h3>
+            <div id="coverLetterContent" style="max-height: 500px; overflow-y: auto; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; line-height: 1.7; white-space: pre-wrap; font-family: 'Inter', sans-serif;">
+                Loading...
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="btn btn-primary" onclick="copyCoverLetter()">Copy to Clipboard</button>
+                <button class="btn btn-outline" onclick="closeModal('coverLetterModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        console.log('Dashboard JavaScript loaded successfully');
+        let currentJobId = null;
+        let currentCompany = null;
+
+        function markApplied(jobId, company) {
+            console.log('markApplied called:', jobId, company);
+            currentJobId = jobId;
+            currentCompany = company;
+            try {
+                const cvInput = document.getElementById('cvVersion');
+                console.log('cvVersion element:', cvInput);
+                cvInput.value = `${company.replace(/\s+/g, '_')}_Resume.pdf`;
+                console.log('Opening modal...');
+                openModal('applyModal');
+            } catch (error) {
+                console.error('Error in markApplied:', error);
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function updateStatus(jobId) {
+            console.log('updateStatus called:', jobId);
+            currentJobId = jobId;
+            openModal('statusModal');
+        }
+
+        function openModal(modalId) {
+            console.log('openModal called:', modalId);
+            const modal = document.getElementById(modalId);
+            console.log('Modal element:', modal);
+            if (modal) {
+                modal.classList.add('active');
+                console.log('Modal should now be visible');
+            } else {
+                console.error('Modal not found:', modalId);
+                alert('Modal not found: ' + modalId);
+            }
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        async function submitApplied() {
+            const cvVersion = document.getElementById('cvVersion').value;
+            const method = document.getElementById('appMethod').value;
+            
+            try {
+                const response = await fetch('/api/mark_applied', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_id: currentJobId,
+                        cv_version: cvVersion,
+                        method: method
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showToast('✓ Marked as applied!');
+                    closeModal('applyModal');
+                    setTimeout(() => location.reload(), 700);
+                } else {
+                    showToast('Error: ' + (result.error || 'Could not mark applied'));
+                }
+            } catch (err) {
+                showToast('Network error when marking applied');
+            }
+        }
+
+        async function submitStatus() {
+            const status = document.getElementById('newStatus').value;
+            const notes = document.getElementById('statusNotes').value;
+            
+            try {
+                const response = await fetch('/api/update_status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_id: currentJobId,
+                        status: status,
+                        notes: notes
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showToast(`✓ Updated to ${status}!`);
+                    closeModal('statusModal');
+                    setTimeout(() => location.reload(), 700);
+                } else {
+                    showToast('Error: ' + (result.error || 'Could not update status'));
+                }
+            } catch (err) {
+                showToast('Network error when updating status');
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('active');
+            setTimeout(() => toast.classList.remove('active'), 2500);
+        }
+
+        // View cover letter
+        let currentCoverLetter = '';
+        async function viewCoverLetter(jobId, company, title) {
+            console.log('Fetching cover letter for job', jobId);
+            const contentDiv = document.getElementById('coverLetterContent');
+            
+            // Clear any existing content first
+            contentDiv.innerHTML = '';
+            contentDiv.textContent = 'Loading...';
+            openModal('coverLetterModal');
+            
+            try {
+                const response = await fetch(`/api/cover_letter/${jobId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentCoverLetter = result.cover_letter;
+                    // Clear completely before setting new content
+                    contentDiv.innerHTML = '';
+                    contentDiv.textContent = result.cover_letter;
+                    console.log('Cover letter loaded successfully');
+                    console.log('Cover letter length:', result.cover_letter.length);
+                    console.log('First 100 chars:', result.cover_letter.substring(0, 100));
+                } else {
+                    contentDiv.innerHTML = `<div style="color: var(--warning); text-align: center; padding: 40px;">
+                        <p style="font-size: 18px; margin-bottom: 12px;">📄 No cover letter found</p>
+                        <p style="color: var(--muted); font-size: 14px;">This job hasn't been generated yet. Run the application generator for <strong>${company}</strong> - ${title}</p>
+                    </div>`;
+                    currentCoverLetter = '';
+                }
+            } catch (err) {
+                console.error('Error fetching cover letter:', err);
+                contentDiv.innerHTML = `<div style="color: var(--danger); text-align: center; padding: 40px;">
+                    <p>Error loading cover letter</p>
+                    <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">${err.message}</p>
+                </div>`;
+                currentCoverLetter = '';
+            }
+        }
+
+        function copyCoverLetter() {
+            if (!currentCoverLetter) {
+                showToast('⚠ No cover letter to copy');
+                return;
+            }
+            
+            console.log('Attempting to copy cover letter, length:', currentCoverLetter.length);
+            
+            // Try modern clipboard API first
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(currentCoverLetter).then(() => {
+                    showToast('✓ Copied to clipboard!');
+                    console.log('Successfully copied via clipboard API');
+                }).catch(err => {
+                    console.error('Clipboard API failed:', err);
+                    // Fallback to old method
+                    fallbackCopy(currentCoverLetter);
+                });
+            } else {
+                // Use fallback for older browsers
+                fallbackCopy(currentCoverLetter);
+            }
+        }
+        
+        function fallbackCopy(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast('✓ Copied to clipboard!');
+                    console.log('Successfully copied via fallback method');
+                } else {
+                    showToast('⚠ Could not copy to clipboard');
+                    console.error('Fallback copy failed');
+                }
+            } catch (err) {
+                showToast('⚠ Could not copy to clipboard');
+                console.error('Fallback copy error:', err);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // Run scrape now
+        const runScrapeBtn = document.getElementById('runScrapeBtn');
+        async function triggerScrape() {
+            if (!runScrapeBtn) return;
+            runScrapeBtn.disabled = true;
+            runScrapeBtn.textContent = 'Running...';
+            try {
+                const res = await fetch('/api/run_scrape', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Scrape started. Refresh in ~30s.');
+                } else {
+                    showToast(data.error || 'Scrape already running');
+                }
+            } catch (e) {
+                showToast('Error starting scrape');
+            } finally {
+                runScrapeBtn.disabled = false;
+                runScrapeBtn.textContent = 'Run scrape now';
+            }
+        }
+        if (runScrapeBtn) {
+            runScrapeBtn.addEventListener('click', triggerScrape);
+        }
+
+        // Filters
+        const scoreFilter = document.getElementById('scoreFilter');
+        const statusFilter = document.getElementById('statusFilter');
+        const searchFilter = document.getElementById('searchFilter');
+        const remoteToggle = document.getElementById('remoteToggle');
+        const resetFilters = document.getElementById('resetFilters');
+        const emptyState = document.getElementById('emptyState');
+
+        function applyFilters() {
+            const minScore = Number(scoreFilter.value || 0);
+            const status = statusFilter.value;
+            const query = (searchFilter.value || '').toLowerCase();
+            const remoteOnly = remoteToggle.checked;
+            let visible = 0;
+
+            document.querySelectorAll('.job-card').forEach(card => {
+                const score = parseFloat(card.dataset.score || '0');
+                const cardStatus = card.dataset.status || 'new';
+                const isRemote = card.dataset.remote === 'true';
+                const text = card.dataset.text || '';
+
+                const matchesScore = score >= minScore;
+                const matchesStatus = status === 'all' || cardStatus === status;
+                const matchesQuery = !query || text.includes(query);
+                const matchesRemote = !remoteOnly || isRemote;
+
+                const show = matchesScore && matchesStatus && matchesQuery && matchesRemote;
+                card.style.display = show ? 'block' : 'none';
+                if (show) visible += 1;
+            });
+
+            document.getElementById('visibleCount').textContent = visible;
+            document.getElementById('scoreValue').textContent = minScore;
+            emptyState.style.display = visible ? 'none' : 'block';
+        }
+
+        scoreFilter.addEventListener('input', applyFilters);
+        statusFilter.addEventListener('change', applyFilters);
+        searchFilter.addEventListener('input', applyFilters);
+        remoteToggle.addEventListener('change', applyFilters);
+        resetFilters.addEventListener('click', () => {
+            scoreFilter.value = 50;
+            statusFilter.value = 'all';
+            searchFilter.value = '';
+            remoteToggle.checked = false;
+            applyFilters();
+        });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.classList.remove('active');
+            }
+        }
+
+        // Event delegation for mark applied buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.mark-applied-btn')) {
+                const btn = e.target.closest('.mark-applied-btn');
+                const jobId = parseInt(btn.dataset.jobId);
+                const company = btn.dataset.company;
+                markApplied(jobId, company);
+            }
+            
+            if (e.target.closest('.update-status-btn')) {
+                const btn = e.target.closest('.update-status-btn');
+                const jobId = parseInt(btn.dataset.jobId);
+                updateStatus(jobId);
+            }
+            
+            if (e.target.closest('.view-cover-letter-btn')) {
+                const btn = e.target.closest('.view-cover-letter-btn');
+                const jobId = parseInt(btn.dataset.jobId);
+                const company = btn.dataset.company;
+                const title = btn.dataset.title;
+                viewCoverLetter(jobId, company, title);
+            }
+        });
+
+        window.onload = applyFilters;
+    </script>
+</body>
+</html>

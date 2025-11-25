@@ -39,9 +39,24 @@ class TechNYCScraper(BaseScraper):
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument(f'user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=options)
-        logger.info("TechNYC Chrome driver initialized")
+        try:
+            # Try to use system chromedriver first (for Docker)
+            import os
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+            if os.path.exists(chromedriver_path):
+                service = Service(chromedriver_path)
+                logger.info(f"TechNYC using system chromedriver: {chromedriver_path}")
+            else:
+                # Fallback to webdriver_manager
+                service = Service(ChromeDriverManager().install())
+                logger.info("TechNYC using webdriver_manager chromedriver")
+            
+            self.driver = webdriver.Chrome(service=service, options=options)
+            logger.info("TechNYC Chrome driver initialized")
+        except Exception as e:
+            logger.error(f"TechNYC failed to initialize Chrome driver: {e}")
+            return None
+            
         return self.driver
         
     def search_jobs(self, search_terms: List[str], location: str = "New York, NY") -> List[Dict[str, Any]]:

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Statistics - JobHunter</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="brand">JobHunter</div>
+            <div class="nav">
+                <a href="/">All Jobs</a>
+                <a href="/applied">My Applications</a>
+                <a href="/stats">Statistics</a>
+            </div>
+        </div>
+
+        <section class="panel">
+            <div class="section-title">
+                <div>
+                    <h2>Progress overview</h2>
+                    <div class="subtle">Conversion across the funnel plus status breakdown.</div>
+                </div>
+                <div class="pill">{{ stats.total_jobs }} total tracked</div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Jobs</h3>
+                    <div class="value">{{ stats.total_jobs }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Applied</h3>
+                    <div class="value">{{ stats.applied }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Phone Screens</h3>
+                    <div class="value">{{ stats.phone_screens }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Interviews</h3>
+                    <div class="value">{{ stats.interviews }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Offers</h3>
+                    <div class="value">{{ stats.offers }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Rejections</h3>
+                    <div class="value">{{ stats.rejected }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Response Rate</h3>
+                    <div class="value">{{ "%.1f"|format(stats.response_rate) }}%</div>
+                </div>
+            </div>
+
+            <div class="section-title" style="margin-top: 10px;">
+                <h2>Job status breakdown</h2>
+            </div>
+            <div class="stats-grid">
+                {% for status, count in status_counts.items() %}
+                <div class="stat-card">
+                    <h3>{{ status.replace('_', ' ').title() }}</h3>
+                    <div class="value">{{ count }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</body>
+</html>

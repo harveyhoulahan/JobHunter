@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Applications - JobHunter</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="brand">JobHunter</div>
+            <div class="nav">
+                <a href="/">All Jobs</a>
+                <a href="/applied">My Applications</a>
+                <a href="/stats">Statistics</a>
+            </div>
+        </div>
+
+        <section class="panel">
+            <div class="section-title">
+                <div>
+                    <h2>Application history</h2>
+                    <div class="subtle">Every role you’ve marked as applied lives here.</div>
+                </div>
+                <div class="pill">Applied: {{ jobs|length }}</div>
+            </div>
+
+            <div class="jobs-grid">
+                {% if jobs %}
+                    {% for job in jobs %}
+                    <div class="job-card">
+                        <div class="job-header">
+                            <div>
+                                <div class="job-title">{{ job.title }}</div>
+                                <div class="job-company">{{ job.company }}</div>
+                            </div>
+                            <div class="score-badge {% if job.fit_score >= 80 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
+                                {{ "%.1f"|format(job.fit_score) }}%
+                            </div>
+                        </div>
+
+                        <div class="job-meta">
+                            <span>📍 {{ job.location or 'Remote' }}</span>
+                            <span class="status-badge status-{{ job.status or 'applied' }}">
+                                {{ (job.status or 'applied').replace('_', ' ') }}
+                            </span>
+                            <span>📅 Applied {{ job.applied_date.strftime('%b %d, %Y') }}</span>
+                        </div>
+
+                        {% if job.cv_version %}
+                        <div class="meta-quiet">📄 CV: {{ job.cv_version }}</div>
+                        {% endif %}
+
+                        <div class="job-actions">
+                            <a href="{{ job.url }}" target="_blank" class="btn btn-primary btn-small">View job →</a>
+                            <a href="/jobs/{{ job.id }}" class="btn btn-outline btn-small">Details</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">No applications yet. Start applying to jobs!</div>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</body>
+</html>

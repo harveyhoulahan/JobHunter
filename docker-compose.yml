@@ -1,15 +1,34 @@
-version: '3.8'
-
 services:
   jobhunter:
     build: .
     container_name: jobhunter
+    command: ["python", "src/scheduler/run.py"]
     restart: unless-stopped
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config
+      - ./applications:/app/applications
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+
+  dashboard:
+    build: .
+    container_name: jobhunter-dashboard
+    command: ["python", "web_app.py"]
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - ./applications:/app/applications
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - jobhunter

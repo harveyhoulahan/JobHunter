@@ -36,9 +36,23 @@ class ZipRecruiterScraper(BaseScraper):
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=options)
-        logger.info("ZipRecruiter Chrome driver initialized")
+        try:
+            # Try to use system chromedriver first (for Docker)
+            import os
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+            if os.path.exists(chromedriver_path):
+                service = Service(chromedriver_path)
+                logger.info(f"ZipRecruiter using system chromedriver: {chromedriver_path}")
+            else:
+                service = Service(ChromeDriverManager().install())
+                logger.info("ZipRecruiter using webdriver_manager chromedriver")
+            
+            self.driver = webdriver.Chrome(service=service, options=options)
+            logger.info("ZipRecruiter Chrome driver initialized")
+        except Exception as e:
+            logger.error(f"ZipRecruiter failed to initialize Chrome driver: {e}")
+            return None
+            
         return self.driver
     
     def search_jobs(self, search_terms: List[str], location: str = "New York, NY") -> List[Dict[str, Any]]:
@@ -73,14 +87,10 @@ class ZipRecruiterScraper(BaseScraper):
     
     def _search_single_term(self, term: str, location: str, driver) -> List[Dict[str, Any]]:
         """Search for a single term"""
-        # Build search URL with most recent filter
+        # Build search URL - simpler params
         params = {
             'search': term,
-            'location': location,
-            'days': '7',
-            'refine_by_location': location,
-            'refine_by_salary': '0USD',
-            'refine_by_employment_type': 'full_time'
+            'location': location
         }
         search_url = f"{self.base_url}/jobs-search?{urllib.parse.urlencode(params)}"
         
@@ -90,26 +100,49 @@ class ZipRecruiterScraper(BaseScraper):
             driver.get(search_url)
             time.sleep(3)
             
-            # Wait for job results
+            # Wait for page load
             try:
                 WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "article, .job_result, [class*='job']"))
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
+                time.sleep(2)  # Extra wait for dynamic content
             except:
-                logger.warning(f"No job cards found for '{term}' on ZipRecruiter")
+                logger.warning(f"Timeout waiting for ZipRecruiter page")
                 return []
             
             html = driver.page_source
             soup = BeautifulSoup(html, 'lxml')
             
-            # Try multiple selectors
-            job_cards = soup.find_all('article', limit=8)
+            # Debug: Save HTML to check structure
+            logger.debug(f"Page title: {soup.title.string if soup.title else 'No title'}")
+            
+            # Try many different selectors for job cards
+            job_cards = []
+            selectors_to_try = [
+                ('article', {}),
+                ('li', {'class': lambda x: x and 'job' in x.lower()}),
+                ('div', {'class': lambda x: x and 'job' in x.lower() and 'card' in x.lower()}),
+                ('div', {'data-testid': lambda x: x and 'job' in x.lower()}),
+                ('a', {'class': lambda x: x and 'job_link' in x.lower()}),
+            ]
+            
+            for tag, attrs in selectors_to_try:
+                job_cards = soup.find_all(tag, attrs, limit=20)
+                if job_cards:
+                    logger.info(f"Found {len(job_cards)} elements with selector {tag} {attrs}")
+                    break
+            
             if not job_cards:
-                job_cards = soup.find_all('div', class_='job_result', limit=8)
+                logger.warning(f"No job cards found with any selector for '{term}' on ZipRecruiter")
+                # Save HTML for debugging
+                with open('/tmp/ziprecruiter_debug.html', 'w') as f:
+                    f.write(html)
+                logger.debug("Saved page HTML to /tmp/ziprecruiter_debug.html")
+                return []
             
             jobs = []
             
-            for card in job_cards[:8]:
+            for card in job_cards[:10]:
                 try:
                     job = self._parse_job_card(card, driver)
                     if job:

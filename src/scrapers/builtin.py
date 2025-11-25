@@ -37,7 +37,17 @@ class BuiltInNYCScraper(BaseScraper):
             chrome_options.add_argument(f'user-agent={self.user_agent}')
             
             try:
-                service = Service(ChromeDriverManager().install())
+                # Try to use system chromedriver first (for Docker)
+                import os
+                chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+                if os.path.exists(chromedriver_path):
+                    service = Service(chromedriver_path)
+                    logger.info(f"Using system chromedriver: {chromedriver_path}")
+                else:
+                    # Fallback to webdriver_manager
+                    service = Service(ChromeDriverManager().install())
+                    logger.info("Using webdriver_manager chromedriver")
+                
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
                 logger.info("Chrome driver initialized successfully")
             except Exception as e:

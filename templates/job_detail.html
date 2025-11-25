@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Job Details - JobHunter</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="brand">JobHunter</div>
+            <div class="nav">
+                <a href="/">All Jobs</a>
+                <a href="/applied">My Applications</a>
+                <a href="/stats">Statistics</a>
+            </div>
+        </div>
+
+        <section class="panel">
+            <div class="section-title">
+                <div>
+                    <h2>{{ job.title }}</h2>
+                    <div class="subtle">{{ job.company }}</div>
+                </div>
+                <div class="score-badge {% if job.fit_score >= 80 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
+                    {{ "%.1f"|format(job.fit_score) }}%
+                </div>
+            </div>
+
+            <div class="detail-grid">
+                <div class="detail-block">
+                    <div class="detail-label">Status</div>
+                    <div class="detail-value">
+                        <span class="status-badge status-{{ job.status or 'new' }}">{{ (job.status or 'new').replace('_', ' ') }}</span>
+                    </div>
+                </div>
+                <div class="detail-block">
+                    <div class="detail-label">Location</div>
+                    <div class="detail-value">{{ job.location or 'Remote' }}</div>
+                </div>
+                <div class="detail-block">
+                    <div class="detail-label">Source</div>
+                    <div class="detail-value">{{ job.source }}</div>
+                </div>
+                <div class="detail-block">
+                    <div class="detail-label">Posted</div>
+                    <div class="detail-value">{{ job.posted_date or 'Recently' }}</div>
+                </div>
+                {% if job.applied_date %}
+                <div class="detail-block">
+                    <div class="detail-label">Applied</div>
+                    <div class="detail-value">{{ job.applied_date.strftime('%b %d, %Y') }}</div>
+                </div>
+                {% endif %}
+                {% if job.cv_version %}
+                <div class="detail-block">
+                    <div class="detail-label">CV Used</div>
+                    <div class="detail-value">{{ job.cv_version }}</div>
+                </div>
+                {% endif %}
+                {% if job.application_method %}
+                <div class="detail-block">
+                    <div class="detail-label">Method</div>
+                    <div class="detail-value">{{ job.application_method.title() }}</div>
+                </div>
+                {% endif %}
+                <div class="detail-block">
+                    <div class="detail-label">Visa Status</div>
+                    <div class="detail-value">
+                        {% if job.visa_status == 'explicit' %}
+                            E-3 Mentioned
+                        {% elif job.visa_status == 'possible' %}
+                            Sponsorship Possible
+                        {% else %}
+                            Not Mentioned
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="tags" style="margin-top: 10px;">
+                {% if job.role_matches %}
+                    {% for role in job.role_matches %}
+                        <span class="chip">{{ role }}</span>
+                    {% endfor %}
+                {% endif %}
+                {% if job.tech_matches %}
+                    {% for tech in job.tech_matches[:6] %}
+                        <span class="chip">{{ tech }}</span>
+                    {% endfor %}
+                {% endif %}
+                {% if job.industry_matches %}
+                    {% for industry in job.industry_matches %}
+                        <span class="chip">{{ industry }}</span>
+                    {% endfor %}
+                {% endif %}
+                {% if job.remote %}
+                    <span class="chip">Remote</span>
+                {% endif %}
+            </div>
+
+            {% if job.reasoning %}
+            <div style="margin-top: 14px;">
+                <div class="detail-label">AI reasoning</div>
+                <div class="description-box">{{ job.reasoning }}</div>
+            </div>
+            {% endif %}
+
+            {% if job.description %}
+            <div style="margin-top: 14px;">
+                <div class="detail-label">Job description</div>
+                <div class="description-box">{{ job.description[:4000] }}{% if job.description|length > 4000 %}…{% endif %}</div>
+            </div>
+            {% endif %}
+
+            {% if job.notes or job.interview_rounds %}
+            <div style="margin-top: 14px;" class="detail-grid">
+                {% if job.notes %}
+                <div class="detail-block" style="grid-column: span 2;">
+                    <div class="detail-label">Notes</div>
+                    <div class="description-box">{{ job.notes }}</div>
+                </div>
+                {% endif %}
+                {% if job.interview_rounds %}
+                <div class="detail-block" style="grid-column: span 2;">
+                    <div class="detail-label">Interview rounds</div>
+                    <div class="timeline">
+                        {% for round in job.interview_rounds %}
+                        <div class="timeline-item">
+                            <div class="timeline-title">{{ round.type|title }}</div>
+                            <div class="timeline-meta">{{ round.date or 'TBD' }}</div>
+                            {% if round.notes %}<div class="subtle">{{ round.notes }}</div>{% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="job-actions" style="margin-top: 16px;">
+                <a href="{{ job.url }}" target="_blank" class="btn btn-primary btn-small">Open job posting →</a>
+                {% if not job.applied_date %}
+                <a href="/#job-list" class="btn btn-surface btn-small">Mark as applied</a>
+                {% else %}
+                <a href="/#job-list" class="btn btn-surface btn-small">Update status</a>
+                {% endif %}
+                <a href="/" class="btn btn-outline btn-small">← Back</a>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
