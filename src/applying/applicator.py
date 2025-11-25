@@ -10,7 +10,7 @@ Handles automated job applications by:
 import os
 import sys
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 # Add parent directory to path
@@ -130,7 +130,7 @@ class JobApplicator:
         logger.info(f"Preparing application for: {job_title} at {company}")
         
         # Generate customized CV
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         safe_company = self._sanitize_filename(company)
         safe_title = self._sanitize_filename(job_title)
         
@@ -172,7 +172,7 @@ class JobApplicator:
                 'linkedin': HARVEY_PROFILE.get('linkedin')
             },
             'status': 'prepared',
-            'prepared_at': datetime.utcnow().isoformat(),
+            'prepared_at': datetime.now(timezone.utc).isoformat(),
             'applied_at': None
         }
         
@@ -339,7 +339,7 @@ Harvey J. Houlahan
         for app in self.pending_applications:
             if app['id'] == application_id:
                 app['status'] = 'applied'
-                app['applied_at'] = datetime.utcnow().isoformat()
+                app['applied_at'] = datetime.now(timezone.utc).isoformat()
                 self.completed_applications.append(app)
                 self.pending_applications.remove(app)
                 
