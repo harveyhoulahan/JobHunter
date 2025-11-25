@@ -11,7 +11,7 @@ import os
 import re
 import sys
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 # Add parent directory to path
@@ -196,7 +196,7 @@ class CVGenerator:
                 'job_title': job_title,
                 'company': company
             },
-            'generated_at': datetime.utcnow().isoformat()
+            'generated_at': datetime.now(timezone.utc).isoformat()
         }
         
         # Generate PDF if path provided and library available
@@ -439,7 +439,7 @@ to the {job_title} role at {company}."""
         cv_parts.extend([
             "",
             "=" * 60,
-            f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC",
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC",
             "=" * 60,
         ])
         
