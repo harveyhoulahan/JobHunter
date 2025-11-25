@@ -213,22 +213,32 @@ class CVGenerator:
         tech_matches: List[str],
         industry_matches: List[str]
     ) -> str:
-        """Generate a customized professional summary"""
-        # Base summary from profile
-        base_summary = HARVEY_PROFILE.get('summary', '')
+        """Generate a customized professional summary in Harvey's natural style"""
         
-        # Key tech skills to mention (top 4)
-        key_tech = tech_matches[:4] if tech_matches else ['Python', 'Machine Learning', 'AWS']
-        tech_str = ', '.join(key_tech[:3])
+        # Determine focus based on job title
+        job_lower = job_title.lower()
         
-        # Industry focus
-        industry_focus = industry_matches[0] if industry_matches else 'technology'
+        # Build opening based on role type - matches Harvey's conversational style
+        if any(kw in job_lower for kw in ['machine learning', 'ml engineer', 'ai']):
+            opening = "Results-driven engineer with expertise in Python, Machine Learning, AWS and a strong background in technology"
+            approach = "Experienced in building scalable AI/ML solutions and data pipelines. Passionate about leveraging technology to solve complex problems and drive innovation"
+        elif any(kw in job_lower for kw in ['backend', 'software engineer']):
+            opening = "Results-driven engineer with expertise in Python, Backend Engineering, AWS and a strong background in technology"
+            approach = "Experienced in building scalable systems and data pipelines. Passionate about leveraging technology to solve complex problems and drive innovation"
+        elif any(kw in job_lower for kw in ['data engineer', 'data scientist', 'analytics']):
+            opening = "Results-driven engineer with expertise in Python, Data Engineering, AWS and a strong background in technology"
+            approach = "Experienced in building scalable data pipelines and analytics solutions. Passionate about leveraging technology to solve complex problems and drive innovation"
+        elif any(kw in job_lower for kw in ['full stack', 'fullstack']):
+            opening = "Results-driven engineer with expertise in Python, Full Stack Development, AWS and a strong background in technology"
+            approach = "Experienced in building scalable web applications and backend systems. Passionate about leveraging technology to solve complex problems and drive innovation"
+        else:
+            # Default
+            opening = "Results-driven engineer with expertise in Python, Machine Learning, AWS and a strong background in technology"
+            approach = "Experienced in building scalable AI/ML solutions and data pipelines. Passionate about leveraging technology to solve complex problems and drive innovation"
         
-        # Generate targeted summary
-        custom_summary = f"""Results-driven engineer with expertise in {tech_str} and a strong background in {industry_focus}. 
-Experienced in building scalable AI/ML solutions and data pipelines. Passionate about leveraging technology 
-to solve complex problems and drive innovation. Seeking to bring technical excellence and collaborative spirit 
-to the {job_title} role at {company}."""
+        # Add specific hook based on company/role
+        custom_summary = f"""{opening}.
+{approach}. Seeking to bring technical excellence and collaborative spirit to the {job_title} role at {company}."""
         
         return custom_summary
     

@@ -193,46 +193,70 @@ class JobApplicator:
         job_data: Dict[str, Any],
         score_result: Dict[str, Any]
     ) -> str:
-        """Generate a customized cover letter"""
+        """Generate a customized cover letter in Harvey's natural writing style"""
+        from datetime import datetime
+        
         job_title = job_data.get('title', 'the position')
         company = job_data.get('company', 'your company')
+        location = job_data.get('location', 'New York, NY 10036')
         
-        tech_matches = score_result.get('matches', {}).get('tech', [])
-        industry_matches = score_result.get('matches', {}).get('industry', [])
+        # Extract relevant experience based on job description
+        description = job_data.get('description', '').lower()
         
-        # Key skills to mention
-        key_skills = ', '.join(tech_matches[:3]) if tech_matches else 'Python, machine learning, and cloud technologies'
+        # Determine which experience to highlight based on job focus
+        primary_exp = ""
+        secondary_exp = ""
         
-        # Industry connection
-        industry_connection = ""
-        if industry_matches:
-            industry = industry_matches[0]
-            if 'fashion' in industry.lower():
-                industry_connection = "Having worked extensively in fashion tech at FibreTrace and Modaics, I understand the unique challenges of building technology solutions for this industry."
-            elif 'health' in industry.lower() or 'med' in industry.lower():
-                industry_connection = "My background includes healthcare-focused projects, and I'm passionate about leveraging technology to improve health outcomes."
-            elif 'ag' in industry.lower():
-                industry_connection = "My experience building IoT solutions for agricultural applications at AgrIQ has given me deep insight into the AgTech space."
-            else:
-                industry_connection = f"I'm particularly drawn to {company}'s work in {industry}."
+        if any(kw in description for kw in ['ml', 'machine learning', 'ai', 'llm', 'nlp']):
+            primary_exp = "At FibreTrace I developed a system that integrated physical-world fibre tracking with digital analytics at enterprise scale"
+            secondary_exp = "and at Friday Technologies I architected semantic-search and AI-driven backend services"
+        elif any(kw in description for kw in ['backend', 'api', 'pipeline', 'data']):
+            primary_exp = "At FibreTrace I built data-processing pipelines that translate raw input into user-focused features"
+            secondary_exp = "and at Friday Technologies I architected scalable backend services that handle production traffic"
+        elif any(kw in description for kw in ['fullstack', 'full-stack', 'frontend']):
+            primary_exp = "At Friday Technologies I built production-grade mobile and web applications with Core ML integration"
+            secondary_exp = "while at FibreTrace I developed enterprise-scale systems trusted by Target and Cargill"
+        else:
+            # Default for ML/backend roles
+            primary_exp = "At FibreTrace I developed a system that integrated physical-world fibre tracking with digital analytics at enterprise scale"
+            secondary_exp = "and at Friday Technologies I architected semantic-search and AI-driven backend services"
         
-        cover_letter = f"""Dear Hiring Manager,
+        # Build the compelling opening based on role type
+        if any(kw in job_title.lower() for kw in ['machine learning', 'ml engineer', 'ai engineer']):
+            opening = f"I am eager to contribute to the {job_title} position; my experience in constructing ML and data-processing pipelines that translate raw input into user-focused features, together with a strong foundation in backend engineering, positions me well to support your"
+            mission_word = "mission"
+        elif any(kw in job_title.lower() for kw in ['backend', 'software engineer', 'full stack']):
+            opening = f"I am eager to contribute to the {job_title} position; my experience building scalable systems and data pipelines, together with a strong foundation in backend engineering and ML, positions me well to support your"
+            mission_word = "engineering goals"
+        elif any(kw in job_title.lower() for kw in ['data engineer', 'data scientist', 'analytics']):
+            opening = f"I am eager to contribute to the {job_title} position; my experience constructing data-processing pipelines and analytics systems, together with a strong foundation in ML and backend engineering, positions me well to support your"
+            mission_word = "data platform"
+        else:
+            opening = f"I am eager to contribute to the {job_title} position; my experience in building production systems, together with a strong foundation in backend engineering and ML, positions me well to support your"
+            mission_word = "technical goals"
+        
+        cover_letter = f"""Harvey Houlahan
+harveyhoulahan@outlook.com
+www.hjhportfolio.com
+[{datetime.now().strftime('%m/%d/%y')}]
 
-I am writing to express my strong interest in the {job_title} position at {company}. With expertise in {key_skills}, I am confident in my ability to contribute meaningfully to your team.
+Hiring Team
+{company}
+{location}
 
-{industry_connection}
+Dear {company},
 
-At FibreTrace, I built AI-powered traceability systems that are now trusted by major retailers like Target and Cargill. This experience taught me how to deliver production-grade solutions that scale. At Friday Technologies, an Apple-recognized consultancy, I've worked on cutting-edge iOS and ML applications.
+{opening} {mission_word}. {primary_exp}, {secondary_exp}. I thrive in settings where rigorous experimentation, iterative development and production readiness converge to deliver tangible impact.
 
-What excites me about this role is the opportunity to combine my technical skills with real-world impact. I thrive in fast-paced environments where I can wear multiple hats and contribute across the stack.
+I am authorized to work in the U.S. under the Australian E-3 visa, which does not require H-1B sponsorship. I am based in New York and excited by the opportunity to contribute to your AI-driven operations at scale.
 
-I would welcome the opportunity to discuss how my background and skills align with {company}'s goals. Thank you for considering my application.
+I live in New York and can commit to onsite work in Midtown 5 days a week. As an Australian citizen, I qualify for the E-3 visa, a straightforward process that requires only the Labor Condition Application (LCA); I can start the paperwork right away if selected.
 
-Best regards,
-Harvey J. Houlahan
-{HARVEY_PROFILE.get('email', 'harveyhoulahan@outlook.com')}
-{HARVEY_PROFILE.get('linkedin', '')}
-"""
+Thank you for reviewing my application. I would appreciate the chance to talk about how my skills could support your platform.
+
+Sincerely,
+
+Harvey J. Houlahan"""
         return cover_letter
     
     def _sanitize_filename(self, name: str) -> str:
