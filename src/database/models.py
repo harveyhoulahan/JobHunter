@@ -47,8 +47,20 @@ class Job(Base):
     # User actions
     clicked = Column(Boolean, default=False)
     applied = Column(Boolean, default=False)
+    applied_date = Column(DateTime)  # When did we apply?
     rejected = Column(Boolean, default=False)
+    rejected_reason = Column(String(50))  # "no_response", "not_selected", "withdrew"
     notes = Column(Text)
+    
+    # Application materials tracking
+    cv_version = Column(String(100))  # Which CV version was used
+    cover_letter_version = Column(String(100))  # Which cover letter
+    application_method = Column(String(50))  # "linkedin", "company_website", "email"
+    
+    # Job progression tracking
+    status = Column(String(50), default='new')  # new, applied, phone_screen, interview, offer, rejected, withdrawn
+    interview_rounds = Column(JSON)  # [{"type": "phone", "date": "...", "notes": "..."}]
+    offer_details = Column(JSON)  # {"salary": 120000, "equity": "...", "deadline": "..."}
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -177,6 +189,90 @@ class Database:
             if job:
                 job.alerted_at = datetime.utcnow()
                 session.commit()
+        finally:
+            session.close()
+    
+    def mark_applied(self, job_id: int, cv_version: str = None, cover_letter_version: str = None, 
+                     application_method: str = None, notes: str = None):
+        """Mark job as applied with application details"""
+        session = self.get_session()
+        try:
+            job = session.query(Job).filter_by(id=job_id).first()
+            if job:
+                job.applied = True
+                job.applied_date = datetime.utcnow()
+                job.status = 'applied'
+                if cv_version:
+                    job.cv_version = cv_version
+                if cover_letter_version:
+                    job.cover_letter_version = cover_letter_version
+                if application_method:
+                    job.application_method = application_method
+                if notes:
+                    job.notes = notes if not job.notes else f"{job.notes}\n\n{notes}"
+                session.commit()
+                logger.info(f"Marked job {job_id} as applied via {application_method or 'unknown'}")
+        finally:
+            session.close()
+    
+    def update_job_status(self, job_id: int, status: str, notes: str = None):
+        """
+        Update job application status
+        Valid statuses: new, applied, phone_screen, interview, offer, rejected, withdrawn
+        """
+        session = self.get_session()
+        try:
+            job = session.query(Job).filter_by(id=job_id).first()
+            if job:
+                job.status = status
+                if notes:
+                    job.notes = notes if not job.notes else f"{job.notes}\n\n{notes}"
+                if status == 'rejected':
+                    job.rejected = True
+                session.commit()
+                logger.info(f"Updated job {job_id} status to '{status}'")
+        finally:
+            session.close()
+    
+    def add_interview_round(self, job_id: int, interview_type: str, date: str = None, notes: str = None):
+        """Add an interview round to job tracking"""
+        session = self.get_session()
+        try:
+            job = session.query(Job).filter_by(id=job_id).first()
+            if job:
+                rounds = job.interview_rounds or []
+                rounds.append({
+                    'type': interview_type,
+                    'date': date or datetime.utcnow().isoformat(),
+                    'notes': notes
+                })
+                job.interview_rounds = rounds
+                job.status = 'interview'
+                session.commit()
+                logger.info(f"Added {interview_type} interview for job {job_id}")
+        finally:
+            session.close()
+    
+    def get_application_stats(self):
+        """Get statistics about applications"""
+        session = self.get_session()
+        try:
+            total_jobs = session.query(Job).count()
+            applied = session.query(Job).filter_by(applied=True).count()
+            phone_screens = session.query(Job).filter_by(status='phone_screen').count()
+            interviews = session.query(Job).filter_by(status='interview').count()
+            offers = session.query(Job).filter_by(status='offer').count()
+            rejected = session.query(Job).filter_by(rejected=True).count()
+            
+            return {
+                'total_jobs': total_jobs,
+                'applied': applied,
+                'phone_screens': phone_screens,
+                'interviews': interviews,
+                'offers': offers,
+                'rejected': rejected,
+                'response_rate': (phone_screens + interviews + offers) / applied * 100 if applied > 0 else 0
+            }
         finally:
             session.close()
     

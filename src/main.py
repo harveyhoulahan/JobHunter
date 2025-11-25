@@ -8,6 +8,9 @@ from typing import List, Dict, Any
 from loguru import logger
 from dotenv import load_dotenv
 
+# Disable tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -125,16 +128,55 @@ class JobHunter:
         stats['jobs_found'] = len(all_jobs)
         logger.info(f"Found {stats['jobs_found']} total jobs")
         
-        # 2. Process and score jobs
-        new_jobs = []
+        # 2. Filter out duplicates BEFORE fetching descriptions (saves time!)
+        logger.info("Filtering duplicates before fetching descriptions...")
+        new_job_candidates = []
         for job_data in all_jobs:
-            # Check if already exists (by source_id first, then URL)
             source_id = job_data.get('source_id')
             url = job_data.get('url')
+            
             if self.db.job_exists(url=url, source_id=source_id):
                 stats['jobs_duplicate'] += 1
                 continue
             
+            # This is a new job - keep it for processing
+            new_job_candidates.append(job_data)
+        
+        logger.info(f"After deduplication: {len(new_job_candidates)} new jobs to process ({stats['jobs_duplicate']} duplicates skipped)")
+        
+        # 3. Fetch descriptions ONLY for new jobs (huge time saver!)
+        logger.info("Fetching descriptions for new jobs only...")
+        jobs_with_descriptions = []
+        
+        for i, job_data in enumerate(new_job_candidates, 1):
+            source = job_data.get('source')
+            url = job_data.get('url')
+            
+            # Get the appropriate scraper
+            scraper = None
+            if source == 'linkedin':
+                scraper = self.scrapers.get('linkedin')
+            elif source == 'builtin_nyc':
+                scraper = self.scrapers.get('builtin')
+            
+            # Fetch description for this specific job
+            if scraper and hasattr(scraper, 'fetch_single_job_description'):
+                try:
+                    description = scraper.fetch_single_job_description(url)
+                    job_data['description'] = description
+                    if i % 10 == 0:
+                        logger.info(f"Fetched descriptions for {i}/{len(new_job_candidates)} new jobs...")
+                except Exception as e:
+                    logger.debug(f"Error fetching description for {url}: {e}")
+                    job_data['description'] = ""
+            
+            jobs_with_descriptions.append(job_data)
+        
+        logger.info(f"Fetched descriptions for {len(jobs_with_descriptions)} new jobs")
+        
+        # 4. Score and save new jobs
+        new_jobs = []
+        for job_data in jobs_with_descriptions:
             # Score the job
             score_result = self.scorer.score_job(job_data)
             
@@ -163,7 +205,7 @@ class JobHunter:
         
         logger.info(f"Processed {stats['jobs_new']} new jobs ({stats['jobs_duplicate']} duplicates)")
         
-        # 3. Send alerts for high matches
+        # 5. Send alerts for high matches
         if new_jobs:
             high_matches = [j for j in new_jobs if j['fit_score'] >= self.config['thresholds']['immediate']]
             stats['high_matches'] = len(high_matches)
@@ -173,7 +215,7 @@ class JobHunter:
             
             logger.info(f"Found {stats['high_matches']} high-match jobs, sent {stats['alerts_sent']} alerts")
         
-        # 4. Log search history
+        # 6. Log search history
         duration = (datetime.now() - start_time).total_seconds()
         self.db.add_search_history({
             'source': 'all',

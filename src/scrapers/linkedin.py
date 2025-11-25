@@ -241,13 +241,9 @@ class LinkedInScraper(BaseScraper):
                         source_id = parts[i + 1].split('?')[0]
                         break
             
-            # Fetch full job description by visiting the job page
-            # Try to get description, but don't fail if we can't
-            description = self._fetch_job_description(url)
-            
-            # Skip if job is closed
-            if description == "CLOSED_POSITION":
-                return None
+            # Don't fetch description yet - we'll do it later for new jobs only
+            # This saves tons of time by not fetching descriptions for duplicates
+            description = ""
             
             return JobListing(
                 title=title,
@@ -262,6 +258,13 @@ class LinkedInScraper(BaseScraper):
         except Exception as e:
             logger.debug(f"Error in _parse_job_card: {e}")
             return None
+    
+    def fetch_single_job_description(self, job_url: str) -> str:
+        """
+        Public method to fetch description for a single job
+        Used after filtering to only fetch descriptions for new jobs
+        """
+        return self._fetch_job_description(job_url)
     
     def _fetch_job_description(self, job_url: str) -> str:
         """Fetch full job description using simple HTTP request with robust error handling"""

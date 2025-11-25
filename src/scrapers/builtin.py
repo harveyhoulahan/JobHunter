@@ -173,9 +173,9 @@ class BuiltInNYCScraper(BaseScraper):
             # Extract job ID from URL
             job_id = url.split('/')[-1]
             
-            # Fetch full job description by visiting the job page
-            # Try to get description, but don't fail if we can't
-            description = self._fetch_job_description(url)
+            # Don't fetch description yet - we'll do it later for new jobs only
+            # This saves tons of time by not fetching descriptions for duplicates
+            description = ""
             
             return JobListing(
                 title=title,
@@ -190,6 +190,13 @@ class BuiltInNYCScraper(BaseScraper):
         except Exception as e:
             logger.debug(f"Error parsing job element: {e}")
             return None
+    
+    def fetch_single_job_description(self, job_url: str) -> str:
+        """
+        Public method to fetch description for a single job
+        Used after filtering to only fetch descriptions for new jobs
+        """
+        return self._fetch_job_description(job_url)
     
     def _fetch_job_description(self, job_url: str) -> str:
         """Fetch full job description by navigating to job page"""
