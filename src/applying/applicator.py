@@ -292,6 +292,12 @@ Harvey J. Houlahan"""
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
             logger.debug(f"Saved application metadata: {metadata_file}")
+            
+            # Also save cover letter as separate text file for easy viewing
+            cover_letter_file = metadata_file.replace('_metadata.json', '_cover_letter.txt')
+            with open(cover_letter_file, 'w') as f:
+                f.write(application.get('cover_letter', ''))
+            logger.debug(f"Saved cover letter: {cover_letter_file}")
         except Exception as e:
             logger.error(f"Error saving metadata: {e}")
     
