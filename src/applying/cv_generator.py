@@ -247,12 +247,16 @@ to the {job_title} role at {company}."""
         skill_scores = {}
         description_lower = job_description.lower()
         
+        # Convert tech_matches to lowercase set once for efficiency
+        tech_matches_lower = {t.lower() for t in tech_matches}
+        core_skills = {'python', 'machine learning', 'aws', 'sql', 'react'}
+        
         for skill in all_skills:
             score = 0
             skill_lower = skill.lower()
             
             # High priority: matches in tech_matches (explicitly matched)
-            if skill_lower in [t.lower() for t in tech_matches]:
+            if skill_lower in tech_matches_lower:
                 score += 100
             
             # Medium priority: appears in job description
@@ -260,7 +264,6 @@ to the {job_title} role at {company}."""
                 score += 50
             
             # Add some base score for core skills
-            core_skills = ['python', 'machine learning', 'aws', 'sql', 'react']
             if skill_lower in core_skills:
                 score += 25
             
@@ -315,22 +318,26 @@ to the {job_title} role at {company}."""
         ]
         
         # Score each experience based on relevance
+        # Pre-compute lowercase sets for efficiency
+        tech_matches_lower = {t.lower() for t in tech_matches}
+        industry_matches_lower = {i.lower() for i in industry_matches}
+        job_title_lower = job_title.lower()
+        
         scored_experiences = []
         for exp in experiences:
             score = 0
             
             # Tech match scoring
             for tech in exp['tech']:
-                if tech.lower() in [t.lower() for t in tech_matches]:
+                if tech.lower() in tech_matches_lower:
                     score += 10
             
             # Industry match scoring
             for ind in exp['industry']:
-                if ind.lower() in [i.lower() for i in industry_matches]:
+                if ind.lower() in industry_matches_lower:
                     score += 15
             
             # Role match scoring
-            job_title_lower = job_title.lower()
             if 'ml' in job_title_lower or 'machine learning' in job_title_lower:
                 if 'ML' in exp['tech'] or 'Machine Learning' in exp['tech']:
                     score += 20

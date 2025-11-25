@@ -138,7 +138,7 @@ class TestJobApplicator:
         # Good job should be eligible
         should_apply = self.applicator.should_apply(job, score_result)
         assert score_result['fit_score'] >= 50
-        assert should_apply == True
+        assert should_apply
     
     def test_should_not_apply_senior_job(self):
         """Test that we should NOT apply to senior jobs"""
@@ -156,7 +156,7 @@ class TestJobApplicator:
         
         # Senior job should be rejected
         should_apply = self.applicator.should_apply(job, score_result)
-        assert should_apply == False
+        assert not should_apply
     
     def test_should_not_apply_no_sponsorship(self):
         """Test that we should NOT apply to jobs without sponsorship"""
@@ -174,7 +174,7 @@ class TestJobApplicator:
         
         # No sponsorship should be rejected
         should_apply = self.applicator.should_apply(job, score_result)
-        assert should_apply == False
+        assert not should_apply
     
     def test_should_not_apply_low_score(self):
         """Test that we should NOT apply to low-scoring jobs"""
@@ -193,7 +193,7 @@ class TestJobApplicator:
         # Low score job should be rejected
         should_apply = self.applicator.should_apply(job, score_result)
         assert score_result['fit_score'] < 50
-        assert should_apply == False
+        assert not should_apply
     
     def test_prepare_application(self):
         """Test preparing an application"""

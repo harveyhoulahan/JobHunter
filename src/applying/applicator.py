@@ -7,6 +7,7 @@ Handles automated job applications by:
 3. Storing application records and generating application materials
 """
 
+import hashlib
 import os
 import sys
 from typing import Dict, List, Any, Optional
@@ -125,7 +126,9 @@ class JobApplicator:
         
         job_title = job_data.get('title', 'Unknown Position')
         company = job_data.get('company', 'Unknown Company')
-        job_id = job_data.get('id') or job_data.get('source_id') or str(hash(job_data.get('url', '')))
+        # Use stable hash for job ID (hashlib.md5 is deterministic unlike hash())
+        url_hash = hashlib.md5(job_data.get('url', '').encode()).hexdigest()[:12]
+        job_id = job_data.get('id') or job_data.get('source_id') or url_hash
         
         logger.info(f"Preparing application for: {job_title} at {company}")
         
@@ -234,11 +237,10 @@ Harvey J. Houlahan
     
     def _sanitize_filename(self, name: str) -> str:
         """Sanitize a string for use as filename"""
-        # Remove or replace invalid characters
+        # Use translate() for efficient character removal
         invalid_chars = '<>:"/\\|?*'
-        result = name
-        for char in invalid_chars:
-            result = result.replace(char, '')
+        translation_table = str.maketrans('', '', invalid_chars)
+        result = name.translate(translation_table)
         # Replace spaces with underscores
         result = result.replace(' ', '_')
         # Limit length
