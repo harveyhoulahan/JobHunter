@@ -23,6 +23,7 @@ from src.scrapers.ziprecruiter import ZipRecruiterScraper
 from src.scrapers.angellist import AngelListScraper
 from src.scrapers.glassdoor import GlassdoorScraper
 from src.alerts.notifications import AlertManager
+from src.applying.applicator import JobApplicator
 
 
 class JobHunter:
@@ -38,6 +39,7 @@ class JobHunter:
         
         self.scorer = JobScorer()
         self.alert_manager = AlertManager()
+        self.applicator = JobApplicator()  # Auto-apply for high-scoring jobs
         
         # Initialize scrapers - ONLY WORKING SCRAPERS ENABLED
         self.scrapers = {
@@ -60,6 +62,10 @@ class JobHunter:
             'thresholds': {
                 'immediate': 70,  # High match - send email immediately
                 'digest': 50      # Medium match - include in daily digest
+            },
+            'auto_apply': {
+                'enabled': True,  # Enable CV generation for high-scoring jobs
+                'min_score': 50.0  # Minimum score to generate CV (50%)
             },
             'search_terms': {
                 'linkedin': [
@@ -215,7 +221,56 @@ class JobHunter:
             
             logger.info(f"Found {stats['high_matches']} high-match jobs, sent {stats['alerts_sent']} alerts")
         
-        # 6. Log search history
+        # 6. Auto-apply to jobs with score >= 50%
+        if self.config.get('auto_apply', {}).get('enabled', False):
+            try:
+                logger.info("Processing jobs for auto-apply...")
+                
+                # Get high-scoring jobs from this batch (>= 50%)
+                eligible_jobs = [j for j in new_jobs if j.get('fit_score', 0) >= 50.0]
+                
+                if eligible_jobs:
+                    logger.info(f"Found {len(eligible_jobs)} jobs with score >= 50% for auto-apply")
+                    
+                    # Prepare score results dict for applicator
+                    score_results = {}
+                    for job in eligible_jobs:
+                        job_key = job.get('url') or job.get('source_id')
+                        if job_key:
+                            score_results[job_key] = {
+                                'fit_score': job.get('fit_score', 0),
+                                'visa_status': job.get('visa_status', 'none'),
+                                'seniority_ok': True,  # Already filtered during scoring
+                                'location_ok': True,   # Already filtered during scoring
+                                'reasoning': job.get('reasoning', ''),
+                                'tech_matches': job.get('tech_matches', []),
+                                'role_matches': job.get('role_matches', []),
+                                'industry_matches': job.get('industry_matches', [])
+                            }
+                    
+                    # Process applications
+                    apply_results = self.applicator.process_jobs(
+                        jobs=eligible_jobs,
+                        score_results=score_results
+                    )
+                    
+                    stats['cvs_generated'] = apply_results.get('applications_prepared', 0)
+                    stats['jobs_skipped'] = apply_results.get('total_jobs', 0) - stats['cvs_generated']
+                    
+                    logger.info(
+                        f"Auto-apply: Generated {stats['cvs_generated']} CVs, "
+                        f"skipped {stats['jobs_skipped']} jobs"
+                    )
+                else:
+                    logger.info("No jobs with score >= 50% found for auto-apply")
+                    stats['cvs_generated'] = 0
+                    stats['jobs_skipped'] = 0
+            except Exception as e:
+                logger.error(f"Error in auto-apply: {e}")
+                stats['cvs_generated'] = 0
+                stats['jobs_skipped'] = 0
+        
+        # 7. Log search history
         duration = (datetime.now() - start_time).total_seconds()
         self.db.add_search_history({
             'source': 'all',
