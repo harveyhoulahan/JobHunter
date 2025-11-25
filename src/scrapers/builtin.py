@@ -194,6 +194,10 @@ class BuiltInNYCScraper(BaseScraper):
     def _fetch_job_description(self, job_url: str) -> str:
         """Fetch full job description by navigating to job page"""
         try:
+            if not self.driver:
+                logger.debug("No driver available, skipping description fetch")
+                return ""
+                
             logger.debug(f"Fetching description from {job_url}")
             self.driver.get(job_url)
             
@@ -215,19 +219,24 @@ class BuiltInNYCScraper(BaseScraper):
             
             if desc_elem:
                 description = desc_elem.get_text(separator=' ', strip=True)
-                return self.clean_description(description)
+                cleaned = self.clean_description(description)
+                if len(cleaned) > 100:
+                    logger.debug(f"✓ Extracted description ({len(cleaned)} chars)")
+                    return cleaned
             
             # Fallback: get all text from main content area
             main_elem = soup.find('main') or soup.find('article')
             if main_elem:
-                return self.clean_description(main_elem.get_text(separator=' ', strip=True))
+                cleaned = self.clean_description(main_elem.get_text(separator=' ', strip=True))
+                if len(cleaned) > 100:
+                    return cleaned
             
-            logger.warning(f"Could not find description for {job_url}")
+            logger.debug(f"Could not find description for {job_url}")
             return ""
             
         except Exception as e:
-            logger.warning(f"Error fetching description from {job_url}: {e}")
-            return ""
+            logger.debug(f"Error fetching description from {job_url}: {e}")
+            return ""  # Return empty instead of failing
     
     def parse_job_listing(self, html: str, url: str) -> Dict[str, Any]:
         """Parse full job listing page"""
