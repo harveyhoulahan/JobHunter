@@ -1,0 +1,46 @@
+# Core dependencies
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# NLP and text processing
+spacy>=3.7.0
+transformers>=4.35.0
+sentence-transformers>=2.2.0
+nltk>=3.8.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Scheduling
+schedule>=1.2.0
+apscheduler>=3.10.0
+
+# Alerts
+sendgrid>=6.11.0
+twilio>=8.10.0
+python-dotenv>=1.0.0
+
+# Configuration
+pyyaml>=6.0.0
+pydantic>=2.5.0
+
+# Web scraping utilities
+selenium>=4.15.0
+playwright>=1.40.0
+
+# Data processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# HTTP client
+httpx>=0.25.0
+aiohttp>=3.9.0
+
+# Logging
+loguru>=0.7.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.12.0

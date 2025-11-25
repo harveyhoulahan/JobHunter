@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  jobhunter:
+    build: .
+    container_name: jobhunter
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
