@@ -244,6 +244,59 @@ def stats():
         session.close()
 
 
+@app.route('/settings')
+def settings():
+    """Settings page for managing scrape locations and job boards"""
+    return render_template('settings.html')
+
+
+@app.route('/api/update_locations', methods=['POST'])
+def update_locations():
+    """Update scraping locations"""
+    try:
+        data = request.get_json(silent=True) or {}
+        locations = data.get('locations', [])
+        
+        # Store locations in a config file
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'locations.json')
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        
+        with open(config_path, 'w') as f:
+            json.dump(locations, f, indent=2)
+        
+        return jsonify({'success': True, 'message': 'Locations updated'})
+    except Exception as e:
+        logger.error(f"Error updating locations: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/get_locations', methods=['GET'])
+def get_locations():
+    """Get current scraping locations"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'locations.json')
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                locations = json.load(f)
+        else:
+            # Return default locations
+            locations = [
+                {'name': 'New York, NY', 'country': 'US', 'enabled': True},
+                {'name': 'Los Angeles, CA', 'country': 'US', 'enabled': True},
+                {'name': 'San Francisco, CA', 'country': 'US', 'enabled': True},
+                {'name': 'Seattle, WA', 'country': 'US', 'enabled': True},
+                {'name': 'Austin, TX', 'country': 'US', 'enabled': True},
+                {'name': 'Boston, MA', 'country': 'US', 'enabled': True},
+                {'name': 'Remote', 'country': 'US', 'enabled': True}
+            ]
+        
+        return jsonify({'success': True, 'locations': locations})
+    except Exception as e:
+        logger.error(f"Error getting locations: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def _start_scrape_job():
     """Kick off a background scrape run if none is running"""
     global scrape_running

@@ -22,6 +22,7 @@ from src.scrapers.builtin import BuiltInNYCScraper
 from src.scrapers.yc_jobs import YCJobsScraper
 from src.alerts.notifications import AlertManager
 from src.applying.applicator import JobApplicator
+from src.config_loader import load_scraping_locations, get_active_countries, should_activate_job_board
 
 
 class JobHunter:
@@ -48,6 +49,14 @@ class JobHunter:
         
         # Configuration
         self.config = config or self._default_config()
+        
+        # Log active locations
+        active_locations = self.config.get('locations', [])
+        logger.info(f"Active scraping locations ({len(active_locations)}): {', '.join(active_locations)}")
+        
+        # Log active countries
+        active_countries = get_active_countries()
+        logger.info(f"Active countries: {', '.join(active_countries)}")
         
         logger.info("JobHunter initialized")
     
@@ -137,15 +146,7 @@ class JobHunter:
                     'python engineer'
                 ]
             },
-            'locations': [
-                'New York, NY',
-                'Los Angeles, CA',
-                'San Francisco, CA',
-                'Seattle, WA',
-                'Austin, TX',
-                'Boston, MA',
-                'Remote'
-            ],
+            'locations': load_scraping_locations(),  # Load from config file
             'exclude_keywords': [
                 'unpaid',
                 'volunteer',

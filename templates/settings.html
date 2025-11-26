@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - JobHunter</title>
+    <link rel="stylesheet" href="/static/style.css?v=2.0">
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="brand">JobHunter Settings</div>
+            <div class="nav">
+                <a href="/">All Jobs</a>
+                <a href="/applied">My Applications</a>
+                <a href="/stats">Statistics</a>
+                <a href="/settings" style="background: rgba(139, 92, 246, 0.2);">Settings</a>
+            </div>
+        </div>
+
+        <section class="panel" style="margin-top: 32px;">
+            <h2>Scraping Locations</h2>
+            <p style="color: var(--muted); margin-bottom: 24px;">
+                Add cities or regions to search for jobs. Future international job boards will be activated based on these locations.
+            </p>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap;">
+                <input id="newLocation" 
+                       type="text" 
+                       class="input" 
+                       placeholder="e.g., Melbourne, London, Berlin"
+                       style="flex: 1; min-width: 250px;">
+                <select id="countrySelect" class="select" style="width: 180px;">
+                    <option value="US">United States</option>
+                    <option value="AU">Australia</option>
+                    <option value="UK">United Kingdom</option>
+                    <option value="CA">Canada</option>
+                    <option value="DE">Germany</option>
+                    <option value="SG">Singapore</option>
+                    <option value="other">Other</option>
+                </select>
+                <button id="addLocationBtn" class="btn btn-primary">+ Add Location</button>
+            </div>
+
+            <div id="locationsList" class="locations-grid">
+                <!-- Locations will be populated here -->
+            </div>
+        </section>
+
+        <section class="panel" style="margin-top: 32px;">
+            <h2>Active Job Boards</h2>
+            <p style="color: var(--muted); margin-bottom: 24px;">
+                Job boards are automatically activated based on your locations. US locations enable LinkedIn & BuiltIn, Australian locations will enable Seek (coming soon).
+            </p>
+
+            <div class="job-boards-status">
+                <div class="board-card">
+                    <h3>🔵 LinkedIn</h3>
+                    <div class="status active">Active</div>
+                    <p>Coverage: Global</p>
+                </div>
+                <div class="board-card">
+                    <h3>🏗️ BuiltIn</h3>
+                    <div class="status active">Active</div>
+                    <p>Coverage: US Tech Hubs</p>
+                </div>
+                <div class="board-card">
+                    <h3>🚀 Y Combinator</h3>
+                    <div class="status active">Active</div>
+                    <p>Coverage: YC Startups (Global)</p>
+                </div>
+                <div class="board-card">
+                    <h3>🦘 Seek</h3>
+                    <div class="status inactive">Coming Soon</div>
+                    <p>Coverage: Australia & NZ</p>
+                    <small style="color: var(--muted);">Auto-activates with AU locations</small>
+                </div>
+                <div class="board-card">
+                    <h3>🇬🇧 Reed</h3>
+                    <div class="status inactive">Coming Soon</div>
+                    <p>Coverage: United Kingdom</p>
+                    <small style="color: var(--muted);">Auto-activates with UK locations</small>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        const DEFAULT_LOCATIONS = [
+            {name: 'New York, NY', country: 'US', enabled: true},
+            {name: 'Los Angeles, CA', country: 'US', enabled: true},
+            {name: 'San Francisco, CA', country: 'US', enabled: true},
+            {name: 'Seattle, WA', country: 'US', enabled: true},
+            {name: 'Austin, TX', country: 'US', enabled: true},
+            {name: 'Boston, MA', country: 'US', enabled: true},
+            {name: 'Remote', country: 'US', enabled: true}
+        ];
+
+        function loadLocations() {
+            const stored = localStorage.getItem('scrapingLocations');
+            return stored ? JSON.parse(stored) : DEFAULT_LOCATIONS;
+        }
+
+        function saveLocations(locations) {
+            localStorage.setItem('scrapingLocations', JSON.stringify(locations));
+            
+            // Also sync to backend
+            fetch('/api/update_locations', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({locations: locations})
+            }).catch(err => console.error('Failed to sync locations:', err));
+        }
+
+        function renderLocations() {
+            const locations = loadLocations();
+            const container = document.getElementById('locationsList');
+            
+            container.innerHTML = locations.map((loc, idx) => `
+                <div class="location-item ${loc.enabled ? '' : 'disabled'}">
+                    <div class="location-info">
+                        <div class="location-name">${loc.name}</div>
+                        <div class="location-country">${getFlagEmoji(loc.country)} ${loc.country}</div>
+                    </div>
+                    <div class="location-actions">
+                        <button class="btn-toggle ${loc.enabled ? 'active' : ''}" 
+                                onclick="toggleLocation(${idx})">
+                            ${loc.enabled ? '✓ Enabled' : 'Disabled'}
+                        </button>
+                        <button class="btn-remove" onclick="removeLocation(${idx})" title="Remove">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getFlagEmoji(country) {
+            const flags = {
+                'US': '🇺🇸', 'AU': '🇦🇺', 'UK': '🇬🇧', 
+                'CA': '🇨🇦', 'DE': '🇩🇪', 'SG': '🇸🇬'
+            };
+            return flags[country] || '🌍';
+        }
+
+        function addLocation() {
+            const input = document.getElementById('newLocation');
+            const countrySelect = document.getElementById('countrySelect');
+            const name = input.value.trim();
+            const country = countrySelect.value;
+            
+            if (!name) {
+                showToast('⚠️ Please enter a location');
+                return;
+            }
+
+            const locations = loadLocations();
+            
+            // Check for duplicates
+            if (locations.some(loc => loc.name.toLowerCase() === name.toLowerCase())) {
+                showToast('⚠️ Location already exists');
+                return;
+            }
+
+            locations.push({name, country, enabled: true});
+            saveLocations(locations);
+            renderLocations();
+            
+            input.value = '';
+            showToast('✓ Location added');
+        }
+
+        function toggleLocation(idx) {
+            const locations = loadLocations();
+            locations[idx].enabled = !locations[idx].enabled;
+            saveLocations(locations);
+            renderLocations();
+            showToast(locations[idx].enabled ? '✓ Location enabled' : 'Location disabled');
+        }
+
+        function removeLocation(idx) {
+            if (!confirm('Remove this location from scraping?')) return;
+            
+            const locations = loadLocations();
+            locations.splice(idx, 1);
+            saveLocations(locations);
+            renderLocations();
+            showToast('✓ Location removed');
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('active');
+            setTimeout(() => toast.classList.remove('active'), 2500);
+        }
+
+        // Event listeners
+        document.getElementById('addLocationBtn').addEventListener('click', addLocation);
+        document.getElementById('newLocation').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addLocation();
+        });
+
+        // Initialize
+        renderLocations();
+    </script>
+
+    <style>
+        .locations-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .location-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            transition: all 0.2s;
+        }
+
+        .location-item.disabled {
+            opacity: 0.5;
+        }
+
+        .location-info {
+            flex: 1;
+        }
+
+        .location-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .location-country {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .location-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-toggle {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .btn-toggle.active {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: #10b981;
+            color: #10b981;
+        }
+
+        .btn-remove {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            background: transparent;
+            color: #ef4444;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 700;
+        }
+
+        .btn-remove:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: #ef4444;
+        }
+
+        .job-boards-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .board-card {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .board-card h3 {
+            margin-bottom: 12px;
+            font-size: 18px;
+        }
+
+        .board-card p {
+            color: var(--muted);
+            font-size: 14px;
+            margin: 8px 0;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .status.active {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+        }
+
+        .status.inactive {
+            background: rgba(148, 163, 184, 0.1);
+            color: var(--muted);
+        }
+    </style>
+</body>
+</html>
