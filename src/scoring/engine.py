@@ -559,42 +559,42 @@ class JobScorer:
                            'fashion tech', 'fashiontech', 'apparel']
         has_priority = any(pri in all_terms for pri in priority_keywords)
         
-        # Generate witty, concise fit message
+        # Generate witty, concise fit message from AI's perspective
         if total_score >= 75:
             # High score - confident and specific
             if is_ml and has_priority:
-                return "My ML pipeline work at FibreTrace—transforming raw sensor data into enterprise features—translates directly to your mission-critical data infrastructure."
+                return "Harvey's ML pipeline work at FibreTrace—transforming raw sensor data into enterprise features—translates directly to this mission-critical data infrastructure."
             elif is_ml:
-                return "Having built production ML systems at FibreTrace that process millions of data points, I'm eager to apply that foundation to your data challenges."
+                return "Strong match: Harvey has built production ML systems at FibreTrace processing millions of data points, directly applicable to these data challenges."
             elif is_backend and has_priority:
-                return "My experience scaling backend systems at Friday Technologies, combined with ML deployment at FibreTrace, positions me well for your tech-driven mission."
+                return "Excellent fit: Harvey's backend scaling at Friday Technologies plus ML deployment at FibreTrace aligns well with this tech-driven mission."
             elif is_backend:
-                return "From building scalable APIs at Friday Technologies to deploying ML models at FibreTrace, I bring a strong foundation in production backend engineering."
+                return "Solid match: Harvey's experience building scalable APIs at Friday Technologies and deploying ML models at FibreTrace provides strong production backend foundation."
             elif is_fullstack:
-                return "My full-stack work—backend systems at Friday Technologies and data pipelines at FibreTrace—gives me the versatility this role demands."
+                return "Good fit: Harvey's full-stack work—backend systems at Friday Technologies and data pipelines at FibreTrace—offers the versatility this role demands."
             else:
-                return "My experience constructing production systems that translate raw inputs into user-focused features positions me well for this challenge."
+                return "Strong candidate: Harvey's experience constructing production systems that translate raw inputs into user-focused features positions him well for this challenge."
         
         elif total_score >= 50:
             # Medium score - highlight transferable skills
             if is_ml:
-                return "While my ML work at FibreTrace focused on sensor data, the skills in building robust pipelines and model deployment transfer well here."
+                return "Transferable skills: While Harvey's ML work at FibreTrace focused on sensor data, his pipeline building and model deployment experience applies here."
             elif is_backend:
-                return "My backend engineering at Friday Technologies—APIs, databases, scalability—provides a solid foundation for this role's technical demands."
+                return "Relevant background: Harvey's backend engineering at Friday Technologies—APIs, databases, scalability—provides solid foundation for these technical demands."
             elif is_fullstack:
-                return "Though my focus has been backend-heavy, my full-stack experience at Friday Technologies and data work at FibreTrace make me adaptable."
+                return "Adaptable fit: Though Harvey's focus has been backend-heavy, his full-stack experience at Friday Technologies and data work at FibreTrace make him flexible."
             else:
-                tech_str = tech_matches[0] if tech_matches else "your stack"
-                return f"My foundation in backend engineering and data pipelines gives me a strong starting point for working with {tech_str}."
+                tech_str = tech_matches[0] if tech_matches else "this stack"
+                return f"Decent match: Harvey's foundation in backend engineering and data pipelines gives him a strong starting point for working with {tech_str}."
         
         else:
             # Lower score - honest but optimistic
             if visa_status == 'excluded':
-                return "This looks interesting, though the visa sponsorship situation might need clarification before proceeding."
+                return "Potential blocker: This looks interesting, though the visa sponsorship situation might need clarification before proceeding."
             elif not seniority_ok:
-                return "While this role seems geared toward more senior candidates, my production experience may still translate well—worth exploring."
+                return "Reach opportunity: Role seems geared toward more senior candidates, but Harvey's production experience may still translate—worth exploring."
             else:
-                return "Though the technical stack differs from my core experience, my adaptability and foundation in production systems could make this work."
+                return "Stretch role: Technical stack differs from Harvey's core experience, but his adaptability and foundation in production systems could make this work."
 
 
 # Convenience function
