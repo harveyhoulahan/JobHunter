@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JobHunter Remote</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: white;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-top: 20px;
+        }
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .status-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+            animation: pulse 2s infinite;
+        }
+        .status-dot.offline {
+            background: #ef4444;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+            animation: none;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .btn {
+            width: 100%;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: 600;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+        .btn-primary {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .stat {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-weight: 500;
+            transition: transform 0.3s;
+            z-index: 1000;
+        }
+        .toast.active {
+            transform: translateX(-50%) translateY(0);
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 JobHunter</h1>
+            <p>Remote Control</p>
+        </div>
+
+        <div class="status-card">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Checking desktop...</span>
+            </div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="totalJobs">-</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="newJobs">-</div>
+                    <div class="stat-label">New Today</div>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn btn-primary" id="scrapeBtn">
+            <span id="scrapeBtnText">🚀 Run Scrape Now</span>
+        </button>
+
+        <button class="btn btn-secondary" onclick="window.open('/api/status', '_blank')">
+            📊 View Full Status
+        </button>
+
+        <button class="btn btn-secondary" onclick="refreshStatus()">
+            🔄 Refresh Status
+        </button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const DESKTOP_URL = '{{ desktop_url }}';
+        
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                if (data.success !== false) {
+                    document.getElementById('statusDot').classList.remove('offline');
+                    document.getElementById('statusText').textContent = '✓ Desktop Online';
+                    
+                    if (data.stats) {
+                        document.getElementById('totalJobs').textContent = data.stats.total_jobs || 0;
+                        document.getElementById('newJobs').textContent = data.stats.new_today || 0;
+                    }
+                } else {
+                    document.getElementById('statusDot').classList.add('offline');
+                    document.getElementById('statusText').textContent = '✗ Desktop Offline';
+                }
+            } catch (error) {
+                document.getElementById('statusDot').classList.add('offline');
+                document.getElementById('statusText').textContent = '✗ Cannot reach desktop';
+            }
+        }
+
+        async function triggerScrape() {
+            const btn = document.getElementById('scrapeBtn');
+            const btnText = document.getElementById('scrapeBtnText');
+            
+            btn.disabled = true;
+            btnText.innerHTML = '<div class="loading"></div> Starting scrape...';
+            
+            try {
+                const response = await fetch('/api/trigger_scrape', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('✓ Scrape started on desktop!');
+                    btnText.textContent = '✓ Scrape Running...';
+                    setTimeout(() => {
+                        btnText.textContent = '🚀 Run Scrape Now';
+                        btn.disabled = false;
+                    }, 3000);
+                } else {
+                    showToast('✗ Failed: ' + (data.error || 'Unknown error'));
+                    btnText.textContent = '🚀 Run Scrape Now';
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                showToast('✗ Desktop unreachable');
+                btnText.textContent = '🚀 Run Scrape Now';
+                btn.disabled = false;
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('active');
+            setTimeout(() => toast.classList.remove('active'), 3000);
+        }
+
+        function refreshStatus() {
+            showToast('🔄 Refreshing...');
+            checkStatus();
+        }
+
+        document.getElementById('scrapeBtn').addEventListener('click', triggerScrape);
+
+        // Check status on load and every 30 seconds
+        checkStatus();
+        setInterval(checkStatus, 30000);
+    </script>
+</body>
+</html>
