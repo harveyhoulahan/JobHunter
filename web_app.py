@@ -329,6 +329,43 @@ def run_scrape():
     return jsonify({'success': True, 'message': 'Scrape started'}), 202
 
 
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """Get system status for mobile remote"""
+    try:
+        stats = db.get_application_stats()
+        return jsonify({
+            'success': True,
+            'online': True,
+            'stats': stats,
+            'scrape_running': scrape_running
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/jobs/recent', methods=['GET'])
+def get_recent_jobs():
+    """Get recent jobs for mobile remote"""
+    session = db.get_session()
+    try:
+        jobs = session.query(Job).order_by(Job.created_at.desc()).limit(10).all()
+        return jsonify({
+            'success': True,
+            'jobs': [{
+                'id': j.id,
+                'title': j.title,
+                'company': j.company,
+                'fit_score': j.fit_score,
+                'created_at': j.created_at.isoformat() if j.created_at else None
+            } for j in jobs]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        session.close()
+
+
 if __name__ == '__main__':
     print("\n" + "=" * 60)
     print("🚀 JobHunter Web Dashboard Starting...")
