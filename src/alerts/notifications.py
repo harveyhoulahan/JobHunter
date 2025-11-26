@@ -49,7 +49,7 @@ class EmailAlerter:
         return self._send_email(recipient, subject, body)
     
     def _format_job_email(self, job: Dict[str, Any], alert_type: str = "immediate") -> str:
-        """Format single job for email"""
+        """Format single job for email (mobile-optimized for iOS)"""
         fit_score = job.get('fit_score', 0)
         matches = job.get('matches', {})
         reasoning = job.get('reasoning', 'No reasoning available')
@@ -59,40 +59,125 @@ class EmailAlerter:
         roles = ', '.join(matches.get('role', []))
         visa_status = job.get('visa_status', 'unknown')
         
+        # Clean URL - remove tracking params and LinkedIn app redirect
+        job_url = job.get('url', '#')
+        # For LinkedIn jobs, use the web URL to prevent app redirect issues
+        if 'linkedin.com' in job_url:
+            # Ensure we're using linkedin.com/jobs/view instead of linkedin app links
+            job_url = job_url.replace('linkedin://job/', 'https://www.linkedin.com/jobs/view/')
+        
         html = f"""
+        <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #0066cc;">{job.get('title', 'Untitled')}</h2>
-            <h3 style="color: #333;">{job.get('company', 'Unknown Company')}</h3>
-            
-            <div style="background: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <h3 style="margin-top: 0;">Fit Score: {fit_score}/100</h3>
-                <p><strong>Technical Match:</strong> {tech_skills or 'None identified'}</p>
-                <p><strong>Industry:</strong> {industries or 'General'}</p>
-                <p><strong>Role:</strong> {roles or 'Various'}</p>
-                <p><strong>Visa Status:</strong> {visa_status}</p>
-            </div>
-            
-            <div style="margin: 20px 0;">
-                <h4>Why this matches:</h4>
-                <p>{reasoning}</p>
-            </div>
-            
-            <div style="margin: 30px 0;">
-                <a href="{job.get('url', '#')}" 
-                   style="background: #0066cc; color: white; padding: 12px 24px; 
-                          text-decoration: none; border-radius: 5px; display: inline-block;">
-                    Apply Now →
-                </a>
-            </div>
-            
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
-            
-            <div style="font-size: 12px; color: #666;">
-                <p><strong>Location:</strong> {job.get('location', 'Not specified')}</p>
-                <p><strong>Posted:</strong> {job.get('posted_date', 'Recently')}</p>
-                <p><strong>Source:</strong> {job.get('source', 'Unknown')}</p>
-            </div>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+            <style>
+                /* iOS Mail optimization */
+                @media only screen and (max-width: 600px) {{
+                    .button {{
+                        width: 100% !important;
+                        display: block !important;
+                        padding: 16px 24px !important;
+                        font-size: 18px !important;
+                    }}
+                    .container {{
+                        padding: 16px !important;
+                    }}
+                    h2 {{
+                        font-size: 22px !important;
+                    }}
+                    h3 {{
+                        font-size: 18px !important;
+                    }}
+                }}
+            </style>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 20px 0;">
+                <tr>
+                    <td align="center">
+                        <table class="container" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <!-- Header -->
+                            <tr>
+                                <td style="background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%); padding: 24px; text-align: center;">
+                                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700;">🎯 High-Match Job Alert</h1>
+                                </td>
+                            </tr>
+                            
+                            <!-- Content -->
+                            <tr>
+                                <td style="padding: 24px;">
+                                    <h2 style="color: #1a1a1a; margin: 0 0 8px 0; font-size: 24px; line-height: 1.3;">{job.get('title', 'Untitled')}</h2>
+                                    <h3 style="color: #6b7280; margin: 0 0 24px 0; font-weight: 600; font-size: 20px;">{job.get('company', 'Unknown Company')}</h3>
+                                    
+                                    <!-- Fit Score -->
+                                    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 20px; border-radius: 10px; margin: 24px 0; border-left: 4px solid #8b5cf6;">
+                                        <h3 style="margin: 0 0 16px 0; color: #1a1a1a; font-size: 18px;">Fit Score: <span style="color: #8b5cf6; font-size: 28px; font-weight: 700;">{fit_score}/100</span></h3>
+                                        <p style="margin: 8px 0; color: #374151; line-height: 1.6;"><strong>Technical Match:</strong> {tech_skills or 'None identified'}</p>
+                                        <p style="margin: 8px 0; color: #374151; line-height: 1.6;"><strong>Industry:</strong> {industries or 'General'}</p>
+                                        <p style="margin: 8px 0; color: #374151; line-height: 1.6;"><strong>Role:</strong> {roles or 'Various'}</p>
+                                        <p style="margin: 8px 0; color: #374151; line-height: 1.6;"><strong>Visa Status:</strong> {visa_status}</p>
+                                    </div>
+                                    
+                                    <!-- Why this matches -->
+                                    <div style="margin: 24px 0;">
+                                        <h4 style="margin: 0 0 12px 0; color: #1a1a1a; font-size: 16px;">Why this matches:</h4>
+                                        <p style="margin: 0; color: #4b5563; line-height: 1.7; font-size: 15px;">{reasoning}</p>
+                                    </div>
+                                    
+                                    <!-- CTA Button - Mobile Optimized -->
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="margin: 32px 0;">
+                                        <tr>
+                                            <td align="center">
+                                                <a href="{job_url}" class="button" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 10px; display: inline-block; font-weight: 600; font-size: 16px; min-width: 200px; text-align: center; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                                                    Apply Now →
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    
+                                    <!-- Job Details -->
+                                    <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 24px;">
+                                        <table width="100%" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">
+                                                    <strong style="color: #374151;">📍 Location:</strong> {job.get('location', 'Not specified')}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">
+                                                    <strong style="color: #374151;">📅 Posted:</strong> {job.get('posted_date', 'Recently')}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">
+                                                    <strong style="color: #374151;">🔗 Source:</strong> {job.get('source', 'Unknown')}
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                    
+                                    <!-- Direct Link (fallback) -->
+                                    <div style="margin-top: 20px; padding: 16px; background-color: #f9fafb; border-radius: 8px;">
+                                        <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 13px;">If button doesn't work, copy this link:</p>
+                                        <p style="margin: 0; word-break: break-all; color: #8b5cf6; font-size: 12px;">{job_url}</p>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Footer -->
+                            <tr>
+                                <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
+                                    <p style="margin: 0; color: #9ca3af; font-size: 12px;">
+                                        JobHunter • Automated Job Alerts for Harvey Houlahan
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -100,44 +185,113 @@ class EmailAlerter:
         return html
     
     def _format_digest_email(self, jobs: List[Dict[str, Any]]) -> str:
-        """Format multiple jobs for digest email"""
+        """Format multiple jobs for digest email (mobile-optimized for iOS)"""
         job_items = ""
         
         for job in sorted(jobs, key=lambda x: x.get('fit_score', 0), reverse=True):
             fit_score = job.get('fit_score', 0)
             tech_skills = ', '.join(job.get('matches', {}).get('tech', [])[:5])
             
+            # Clean URL for LinkedIn
+            job_url = job.get('url', '#')
+            if 'linkedin.com' in job_url:
+                job_url = job_url.replace('linkedin://job/', 'https://www.linkedin.com/jobs/view/')
+            
             job_items += f"""
-            <div style="border: 1px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 5px;">
-                <h3 style="margin-top: 0;">
-                    <a href="{job.get('url', '#')}" style="color: #0066cc; text-decoration: none;">
-                        {job.get('title', 'Untitled')}
-                    </a>
-                </h3>
-                <p><strong>{job.get('company', 'Unknown')}</strong> • {job.get('location', 'Location TBD')}</p>
-                <p style="background: #f0f8ff; padding: 8px; border-radius: 3px; display: inline-block;">
-                    Fit Score: {fit_score}/100
-                </p>
-                <p><strong>Key Skills:</strong> {tech_skills or 'Various'}</p>
-                <p><em>{job.get('reasoning', '')[:150]}...</em></p>
-                <a href="{job.get('url', '#')}" style="color: #0066cc;">View Details →</a>
-            </div>
+            <tr>
+                <td style="padding: 16px; border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 16px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                        <tr>
+                            <td>
+                                <h3 style="margin: 0 0 8px 0; font-size: 18px; line-height: 1.4;">
+                                    <a href="{job_url}" style="color: #8b5cf6; text-decoration: none; font-weight: 600;">
+                                        {job.get('title', 'Untitled')}
+                                    </a>
+                                </h3>
+                                <p style="margin: 0 0 12px 0; color: #374151; font-size: 15px;">
+                                    <strong>{job.get('company', 'Unknown')}</strong> • {job.get('location', 'Location TBD')}
+                                </p>
+                                <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 10px 16px; border-radius: 8px; display: inline-block; margin-bottom: 12px;">
+                                    <span style="color: #8b5cf6; font-weight: 700; font-size: 16px;">Fit Score: {fit_score}/100</span>
+                                </div>
+                                <p style="margin: 12px 0; color: #6b7280; font-size: 14px;"><strong>Key Skills:</strong> {tech_skills or 'Various'}</p>
+                                <p style="margin: 12px 0; color: #4b5563; font-size: 14px; line-height: 1.6;"><em>{job.get('reasoning', '')[:150]}...</em></p>
+                                
+                                <!-- Mobile-optimized button -->
+                                <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 16px;">
+                                    <tr>
+                                        <td align="center" style="padding: 8px 0;">
+                                            <a href="{job_url}" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 14px; min-width: 140px; text-align: center;">
+                                                View Details →
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr><td style="height: 16px;"></td></tr>
             """
         
         html = f"""
+        <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
-            <h1 style="color: #0066cc;">Your Daily Job Digest</h1>
-            <p style="font-size: 16px; color: #666;">
-                {len(jobs)} new opportunities matched your profile
-            </p>
-            
-            {job_items}
-            
-            <hr style="margin: 30px 0;">
-            <p style="font-size: 12px; color: #666; text-align: center;">
-                JobHunter • Automated Job Alerts for Harvey Houlahan
-            </p>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+            <style>
+                @media only screen and (max-width: 600px) {{
+                    .container {{
+                        padding: 12px !important;
+                    }}
+                    h1 {{
+                        font-size: 24px !important;
+                    }}
+                    .button {{
+                        width: 100% !important;
+                        display: block !important;
+                    }}
+                }}
+            </style>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 20px 0;">
+                <tr>
+                    <td align="center">
+                        <table class="container" width="100%" style="max-width: 700px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <!-- Header -->
+                            <tr>
+                                <td style="background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%); padding: 24px; text-align: center;">
+                                    <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">📬 Your Daily Job Digest</h1>
+                                    <p style="margin: 8px 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 16px;">
+                                        {len(jobs)} new opportunities matched your profile
+                                    </p>
+                                </td>
+                            </tr>
+                            
+                            <!-- Jobs List -->
+                            <tr>
+                                <td style="padding: 24px;">
+                                    <table width="100%" cellpadding="0" cellspacing="0">
+                                        {job_items}
+                                    </table>
+                                </td>
+                            </tr>
+                            
+                            <!-- Footer -->
+                            <tr>
+                                <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
+                                    <p style="margin: 0; color: #9ca3af; font-size: 12px;">
+                                        JobHunter • Automated Job Alerts for Harvey Houlahan
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
         </body>
         </html>
         """

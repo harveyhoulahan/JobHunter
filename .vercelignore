@@ -1,0 +1,28 @@
+# Database files - too large for Vercel
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+data/
+src/data/
+
+# Logs
+logs/
+*.log
+
+# Application files
+applications/
+
+# Model cache
+models/
+.cache/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary
+tmp/
+temp/
+*.tmp
