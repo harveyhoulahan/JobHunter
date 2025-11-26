@@ -73,6 +73,15 @@ class JobScorer:
                 self.ai_scorer = get_ai_scorer()
             except Exception as e:
                 logger.warning(f"Could not initialize AI scorer: {e}")
+        
+        # Initialize company researcher (for 75%+ matches)
+        self.company_researcher = None
+        try:
+            from research.company_researcher import CompanyResearcher
+            self.company_researcher = CompanyResearcher()
+            logger.info("Company researcher initialized for deep research on top matches")
+        except Exception as e:
+            logger.warning(f"Company researcher not available: {e}")
     
     def score_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -88,6 +97,7 @@ class JobScorer:
         title = job_data.get('title', '').lower()
         description = job_data.get('description', '').lower()
         location = job_data.get('location', '').lower()
+        company = job_data.get('company', '')
         combined_text = f"{title} {description}"
         
         # Extract eligibility sections for focused analysis
@@ -133,11 +143,35 @@ class JobScorer:
         seniority_ok, seniority_flag, seniority_penalty = self._assess_seniority(title, description)
         total_score *= seniority_penalty
         
+        # 🔍 DEEP COMPANY RESEARCH FOR TOP MATCHES (75%+)
+        company_research = None
+        if total_score >= 75 and self.company_researcher:
+            logger.info(f"🎯 High match detected ({total_score:.1f}%) - researching {company}...")
+            try:
+                company_research = self.company_researcher.research_company(
+                    company_name=company,
+                    company_url=job_data.get('company_url')
+                )
+                
+                # Apply research-based score adjustment
+                if company_research.get('fit_score_adjustment'):
+                    adjustment = company_research['fit_score_adjustment']
+                    logger.info(f"  Adjusting score by {adjustment:+.1f}% based on company research")
+                    total_score = max(0, min(100, total_score + adjustment))
+            except Exception as e:
+                logger.warning(f"Company research failed for {company}: {e}")
+        
         # Generate reasoning
         reasoning = self._generate_reasoning(
             tech_matches, industry_matches, role_matches, eligibility_matches,
             visa_status, location_ok, seniority_ok, total_score, ai_score, ai_details
         )
+        
+        # Enhance reasoning with company research insights (for 75%+ matches)
+        if company_research and self.company_researcher:
+            reasoning = self.company_researcher.enhance_reasoning_with_research(
+                reasoning, company_research
+            )
         
         return {
             'fit_score': round(total_score, 1),
@@ -157,6 +191,7 @@ class JobScorer:
                 'visa_keywords': visa_keywords
             },
             'ai_details': ai_details,
+            'company_research': company_research,  # Include research data
             'visa_status': visa_status,
             'location_ok': location_ok,
             'location_flag': location_flag,
