@@ -1,3 +1,9 @@
+# Virtual environments - HUGE files
+venv/
+env/
+ENV/
+*.venv
+
 # Database files - too large for Vercel
 *.db
 *.sqlite
@@ -26,3 +32,12 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+
+# Node modules
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
