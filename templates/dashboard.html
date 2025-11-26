@@ -242,6 +242,51 @@
         let currentJobId = null;
         let currentCompany = null;
 
+        // Track when user clicks apply link
+        document.addEventListener('click', function(e) {
+            const applyLink = e.target.closest('.apply-link');
+            if (applyLink) {
+                const jobId = applyLink.dataset.jobId;
+                const company = applyLink.dataset.company;
+                
+                // Store in localStorage that they're applying
+                localStorage.setItem('pendingApplication', JSON.stringify({
+                    jobId: jobId,
+                    company: company,
+                    timestamp: Date.now()
+                }));
+            }
+        });
+
+        // Check if user returned from applying
+        window.addEventListener('focus', function() {
+            const pending = localStorage.getItem('pendingApplication');
+            if (pending) {
+                const app = JSON.parse(pending);
+                
+                // Only prompt if it was within last 10 minutes
+                const tenMinutes = 10 * 60 * 1000;
+                if (Date.now() - app.timestamp < tenMinutes) {
+                    setTimeout(() => {
+                        if (confirm(`Did you just apply to ${app.company}?`)) {
+                            // Auto-fill the modal with their info
+                            currentJobId = parseInt(app.jobId);
+                            currentCompany = app.company;
+                            
+                            const cvInput = document.getElementById('cvVersion');
+                            cvInput.value = `${app.company.replace(/\s+/g, '_')}_Resume.pdf`;
+                            
+                            openModal('applyModal');
+                            localStorage.removeItem('pendingApplication');
+                        } else {
+                            // They didn't apply, clear it
+                            localStorage.removeItem('pendingApplication');
+                        }
+                    }, 500); // Small delay so focus event settles
+                }
+            }
+        });
+
         function markApplied(jobId, company) {
             console.log('markApplied called:', jobId, company);
             currentJobId = jobId;

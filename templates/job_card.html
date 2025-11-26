@@ -47,7 +47,11 @@
 
     <!-- Actions -->
     <div class="job-actions">
-        <a href="{{ job.url }}" target="_blank" class="btn btn-primary btn-small">
+        <a href="{{ job.url }}" 
+           target="_blank" 
+           class="btn btn-primary btn-small apply-link"
+           data-job-id="{{ job.id }}"
+           data-company="{{ job.company }}">
             <span>Apply on {{ job.source or 'site' }}</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
