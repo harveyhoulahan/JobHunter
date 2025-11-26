@@ -57,34 +57,34 @@
         <section class="filters">
             <div class="filters-row">
                 <div>
-                    <div class="label">Min fit score</div>
-                    <input id="scoreFilter" class="range" type="range" min="0" max="100" step="5" value="50">
-                    <div class="subtle">Showing ≥ <span id="scoreValue">50</span>%</div>
+                    <div class="label">Search jobs</div>
+                    <input id="searchFilter" class="input" type="text" placeholder="Search title, company, skills...">
                 </div>
                 <div>
-                    <div class="label">Status</div>
-                    <select id="statusFilter" class="select">
-                        <option value="all">All</option>
-                        <option value="new" selected>New (not applied)</option>
-                        <option value="applied">Applied</option>
-                        <option value="phone_screen">Phone screen</option>
-                        <option value="interview">Interview</option>
-                        <option value="offer">Offer</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="withdrawn">Withdrawn</option>
+                    <div class="label">Location filter</div>
+                    <select id="locationFilter" class="select">
+                        <option value="all">All locations</option>
+                        <option value="remote">Remote only</option>
+                        <option value="nyc">New York</option>
+                        <option value="sf">San Francisco</option>
+                        <option value="la">Los Angeles</option>
+                        <option value="seattle">Seattle</option>
+                        <option value="austin">Austin</option>
+                        <option value="boston">Boston</option>
                     </select>
                 </div>
                 <div>
-                    <div class="label">Search title/company</div>
-                    <input id="searchFilter" class="input" type="text" placeholder="e.g. ML Engineer, fintech">
-                </div>
-                <div class="switch">
-                    <input id="remoteToggle" type="checkbox">
-                    <label for="remoteToggle">Remote only</label>
+                    <div class="label">Source</div>
+                    <select id="sourceFilter" class="select">
+                        <option value="all">All sources</option>
+                        <option value="linkedin">LinkedIn</option>
+                        <option value="builtin">BuiltIn</option>
+                        <option value="yc_jobs">Y Combinator</option>
+                    </select>
                 </div>
             </div>
-            <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 4px;">
-                <span class="subtle"><span id="visibleCount">{{ jobs|length }}</span> roles match filters.</span>
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 8px;">
+                <span class="subtle"><span id="visibleCount">{{ (top_matches|length + great_matches|length + good_matches|length) }}</span> new roles ready to review</span>
                 <button id="resetFilters" class="btn btn-outline btn-small">Reset filters</button>
             </div>
         </section>
@@ -113,90 +113,60 @@
         </div>
 
         <section class="panel" id="job-list">
+            <!-- Top Priority Matches (70%+) -->
+            {% if top_matches %}
             <div class="section-title">
                 <div>
-                    <h2>Top matched jobs</h2>
-                    <div class="subtle">Sorted by fit score. Click through to apply, then mark it here.</div>
+                    <h2>🔥 Top Priority Matches</h2>
+                    <div class="subtle">{{ top_matches|length }} exceptional matches ≥70% — Apply immediately</div>
                 </div>
-                <div class="pill">Auto-apply ready ≥50%</div>
+                <div class="pill score-high">Auto-apply tier 1</div>
             </div>
 
             <div class="jobs-grid">
-                {% for job in jobs %}
-                <div class="job-card"
-                     data-score="{{ job.fit_score or 0 }}"
-                     data-status="{{ job.status or 'new' }}"
-                     data-remote="{{ 'true' if job.remote else 'false' }}"
-                     data-text="{{ (job.title ~ ' ' ~ job.company)|lower }}">
-                    <div class="job-header">
-                        <div>
-                            <div class="job-title">{{ job.title }}</div>
-                            <div class="job-company">{{ job.company }}</div>
-                        </div>
-                        <div class="score-badge {% if job.fit_score >= 80 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
-                            {{ "%.1f"|format(job.fit_score) }}%
-                        </div>
-                    </div>
-
-                    <div class="job-meta">
-                        <span>📍 {{ job.location or 'Remote' }}</span>
-                        <span class="status-badge status-{{ job.status or 'new' }}">
-                            {{ (job.status or 'new').replace('_', ' ') }}
-                        </span>
-                        <span>🔗 {{ job.source or 'unknown' }}</span>
-                        {% if job.posted_date %}<span>📅 {{ job.posted_date }}</span>{% endif %}
-                        {% if job.applied_date %}<span>✅ Applied {{ job.applied_date.strftime('%b %d') }}</span>{% endif %}
-                    </div>
-
-                    <div class="tags">
-                        {% if job.role_matches %}
-                            <span class="chip">{{ job.role_matches[0] }}</span>
-                        {% endif %}
-                        {% if job.tech_matches %}
-                            {% for tech in job.tech_matches[:3] %}
-                                <span class="chip">{{ tech }}</span>
-                            {% endfor %}
-                        {% endif %}
-                        {% if job.industry_matches %}
-                            <span class="chip">{{ job.industry_matches[0] }}</span>
-                        {% endif %}
-                        {% if job.remote %}
-                            <span class="chip">Remote</span>
-                        {% endif %}
-                    </div>
-
-                    <div class="job-reasoning">
-                        {{ (job.reasoning or 'This role matches your skills and industry preferences.')[:180] }}{% if (job.reasoning or '')|length > 180 %}…{% endif %}
-                    </div>
-
-                    {% if job.cv_version %}
-                    <div class="meta-quiet">📄 CV used: {{ job.cv_version }}</div>
-                    {% endif %}
-
-                    <div class="job-actions">
-                        <a href="{{ job.url }}" target="_blank" class="btn btn-primary btn-small">View job →</a>
-
-                        {% if not job.applied_date %}
-                        <button class="btn btn-surface btn-small mark-applied-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}">
-                            ✓ Mark as applied
-                        </button>
-                        {% else %}
-                        <button class="btn btn-surface btn-small update-status-btn" data-job-id="{{ job.id }}">
-                            Update status
-                        </button>
-                        {% endif %}
-
-                        <button class="btn btn-surface btn-small view-cover-letter-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}" data-title="{{ job.title }}">
-                            📄 Cover Letter
-                        </button>
-
-                        <a href="/jobs/{{ job.id }}" class="btn btn-outline btn-small">Details</a>
-                    </div>
-                </div>
+                {% for job in top_matches %}
+                {% include 'job_card.html' %}
                 {% endfor %}
             </div>
+            {% endif %}
 
-            <div id="emptyState" class="empty-state" style="display:none;">No roles match these filters yet.</div>
+            <!-- Great Matches (60-69%) -->
+            {% if great_matches %}
+            <div class="section-title" style="margin-top: 48px;">
+                <div>
+                    <h2>⭐ Strong Matches</h2>
+                    <div class="subtle">{{ great_matches|length }} great opportunities 60-69% — Review and apply</div>
+                </div>
+                <div class="pill score-mid">Worth reviewing</div>
+            </div>
+
+            <div class="jobs-grid">
+                {% for job in great_matches %}
+                {% include 'job_card.html' %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Good Matches (50-59%) -->
+            {% if good_matches %}
+            <div class="section-title" style="margin-top: 48px;">
+                <div>
+                    <h2>👍 Good Matches</h2>
+                    <div class="subtle">{{ good_matches|length }} solid options 50-59% — Consider if aligned</div>
+                </div>
+                <div class="pill score-low">Consider</div>
+            </div>
+
+            <div class="jobs-grid">
+                {% for job in good_matches %}
+                {% include 'job_card.html' %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div id="emptyState" class="empty-state" {% if top_matches or great_matches or good_matches %}style="display:none;"{% endif %}>
+                No new jobs found above 50% yet. Check back after next scrape.
+            </div>
         </section>
     </div>
 
@@ -487,50 +457,57 @@
         }
 
         // Filters
-        const scoreFilter = document.getElementById('scoreFilter');
-        const statusFilter = document.getElementById('statusFilter');
         const searchFilter = document.getElementById('searchFilter');
-        const remoteToggle = document.getElementById('remoteToggle');
+        const locationFilter = document.getElementById('locationFilter');
+        const sourceFilter = document.getElementById('sourceFilter');
         const resetFilters = document.getElementById('resetFilters');
         const emptyState = document.getElementById('emptyState');
 
         function applyFilters() {
-            const minScore = Number(scoreFilter.value || 0);
-            const status = statusFilter.value;
             const query = (searchFilter.value || '').toLowerCase();
-            const remoteOnly = remoteToggle.checked;
+            const location = locationFilter.value;
+            const source = sourceFilter.value;
             let visible = 0;
 
             document.querySelectorAll('.job-card').forEach(card => {
-                const score = parseFloat(card.dataset.score || '0');
-                const cardStatus = card.dataset.status || 'new';
-                const isRemote = card.dataset.remote === 'true';
                 const text = card.dataset.text || '';
+                const cardLocation = (card.querySelector('.job-meta .meta-item')?.textContent || '').toLowerCase();
+                const cardSource = card.dataset.source || (card.querySelector('.job-meta .meta-item:nth-child(3)')?.textContent || '').toLowerCase();
+                const isRemote = card.dataset.remote === 'true';
 
-                const matchesScore = score >= minScore;
-                const matchesStatus = status === 'all' || cardStatus === status;
                 const matchesQuery = !query || text.includes(query);
-                const matchesRemote = !remoteOnly || isRemote;
+                const matchesLocation = location === 'all' || 
+                                       (location === 'remote' && isRemote) ||
+                                       cardLocation.includes(location.toLowerCase());
+                const matchesSource = source === 'all' || cardSource.includes(source);
 
-                const show = matchesScore && matchesStatus && matchesQuery && matchesRemote;
+                const show = matchesQuery && matchesLocation && matchesSource;
                 card.style.display = show ? 'block' : 'none';
                 if (show) visible += 1;
             });
 
             document.getElementById('visibleCount').textContent = visible;
-            document.getElementById('scoreValue').textContent = minScore;
+            
+            // Show/hide section titles based on visible cards in each section
+            document.querySelectorAll('.section-title').forEach(title => {
+                const nextElement = title.nextElementSibling;
+                if (nextElement && nextElement.classList.contains('jobs-grid')) {
+                    const visibleInSection = Array.from(nextElement.querySelectorAll('.job-card'))
+                        .filter(card => card.style.display !== 'none').length;
+                    title.style.display = visibleInSection > 0 ? 'flex' : 'none';
+                }
+            });
+            
             emptyState.style.display = visible ? 'none' : 'block';
         }
 
-        scoreFilter.addEventListener('input', applyFilters);
-        statusFilter.addEventListener('change', applyFilters);
         searchFilter.addEventListener('input', applyFilters);
-        remoteToggle.addEventListener('change', applyFilters);
+        locationFilter.addEventListener('change', applyFilters);
+        sourceFilter.addEventListener('change', applyFilters);
         resetFilters.addEventListener('click', () => {
-            scoreFilter.value = 50;
-            statusFilter.value = 'new';
             searchFilter.value = '';
-            remoteToggle.checked = false;
+            locationFilter.value = 'all';
+            sourceFilter.value = 'all';
             applyFilters();
         });
 

@@ -23,8 +23,27 @@ def index():
     """Main dashboard - shows all jobs"""
     session = db.get_session()
     try:
-        # Get top jobs by score
-        jobs = session.query(Job).order_by(Job.fit_score.desc()).limit(50).all()
+        # Get jobs grouped by priority tiers
+        # Only show NEW jobs (not applied) by default
+        all_jobs = session.query(Job)\
+            .filter(Job.applied == False)\
+            .order_by(Job.fit_score.desc(), Job.created_at.desc())\
+            .limit(200)\
+            .all()
+        
+        # Group jobs by score tiers (fit_score is already a float, not a SQLAlchemy column at this point)
+        top_matches = []
+        great_matches = []
+        good_matches = []
+        
+        for j in all_jobs:
+            score = float(j.fit_score) if j.fit_score is not None else 0.0
+            if score >= 70:
+                top_matches.append(j)
+            elif score >= 60:
+                great_matches.append(j)
+            elif score >= 50:
+                good_matches.append(j)
         
         # Get stats
         stats = db.get_application_stats()
@@ -40,7 +59,13 @@ def index():
                 'duration': last_run.duration_seconds
             }
         
-        return render_template('dashboard.html', jobs=jobs, stats=stats, last_scrape=last_scrape)
+        return render_template('dashboard.html', 
+                             top_matches=top_matches,
+                             great_matches=great_matches,
+                             good_matches=good_matches,
+                             all_jobs=all_jobs,
+                             stats=stats, 
+                             last_scrape=last_scrape)
     finally:
         session.close()
 
