@@ -1,8 +1,12 @@
-# Virtual environments - HUGE files
+# CRITICAL: Exclude huge folders
 venv/
+venv
 env/
+env
 ENV/
+.venv/
 *.venv
+node_modules/
 
 # Database files - too large for Vercel
 *.db
@@ -10,34 +14,58 @@ ENV/
 *.sqlite3
 *.db-journal
 data/
+data
 src/data/
+src/data
 
 # Logs
 logs/
+logs
 *.log
 
-# Application files
+# Application files (cover letters, etc)
 applications/
+applications
 
 # Model cache
 models/
+models
 .cache/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Temporary
-tmp/
-temp/
-*.tmp
-
-# Node modules
-node_modules/
+.cache
 
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.so
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Don't deploy these to Vercel
+Dockerfile
+docker-compose.yml
+setup.sh
+*.sh
+test_*.py
+migrate_*.py
+manage_*.py
+generate_*.py
+rescore_*.py
+regenerate_*.py

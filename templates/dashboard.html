@@ -194,6 +194,26 @@
         </div>
     </div>
 
+    <!-- Confirmation Dialog for Application -->
+    <div id="confirmApplyModal" class="modal">
+        <div class="modal-content" style="max-width: 480px; text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 16px;">✨</div>
+            <h3 style="margin-bottom: 8px;">Did you just apply?</h3>
+            <p style="color: var(--muted); margin-bottom: 24px; line-height: 1.6;">
+                We noticed you clicked apply for <strong id="confirmCompanyName" style="color: var(--accent-2);"></strong>.
+                <br>Did you complete the application?
+            </p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button class="btn btn-primary" onclick="confirmApplied(true)" style="min-width: 120px;">
+                    ✓ Yes, I applied
+                </button>
+                <button class="btn btn-outline" onclick="confirmApplied(false)" style="min-width: 120px;">
+                    Not yet
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Update Status Modal -->
     <div id="statusModal" class="modal">
         <div class="modal-content">
@@ -268,24 +288,32 @@
                 const tenMinutes = 10 * 60 * 1000;
                 if (Date.now() - app.timestamp < tenMinutes) {
                     setTimeout(() => {
-                        if (confirm(`Did you just apply to ${app.company}?`)) {
-                            // Auto-fill the modal with their info
-                            currentJobId = parseInt(app.jobId);
-                            currentCompany = app.company;
-                            
-                            const cvInput = document.getElementById('cvVersion');
-                            cvInput.value = `${app.company.replace(/\s+/g, '_')}_Resume.pdf`;
-                            
-                            openModal('applyModal');
-                            localStorage.removeItem('pendingApplication');
-                        } else {
-                            // They didn't apply, clear it
-                            localStorage.removeItem('pendingApplication');
-                        }
+                        // Show beautiful confirmation modal instead of ugly browser confirm
+                        document.getElementById('confirmCompanyName').textContent = app.company;
+                        currentJobId = parseInt(app.jobId);
+                        currentCompany = app.company;
+                        openModal('confirmApplyModal');
                     }, 500); // Small delay so focus event settles
                 }
             }
         });
+
+        function confirmApplied(didApply) {
+            closeModal('confirmApplyModal');
+            
+            if (didApply) {
+                // Auto-fill the application modal
+                const cvInput = document.getElementById('cvVersion');
+                cvInput.value = `${currentCompany.replace(/\s+/g, '_')}_Resume.pdf`;
+                
+                setTimeout(() => {
+                    openModal('applyModal');
+                }, 300);
+            }
+            
+            // Clear the pending application either way
+            localStorage.removeItem('pendingApplication');
+        }
 
         function markApplied(jobId, company) {
             console.log('markApplied called:', jobId, company);
