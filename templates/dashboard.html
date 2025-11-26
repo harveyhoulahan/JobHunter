@@ -45,7 +45,7 @@
                     <div class="label">Last scrape</div>
                     {% if last_scrape %}
                         <div class="stat-pill">
-                            {{ last_scrape.timestamp.strftime('%b %d, %I:%M %p') }} · {{ last_scrape.jobs_new or 0 }} new / {{ last_scrape.jobs_found or 0 }} found · {{ "%.1fs"|format(last_scrape.duration or 0) }}
+                            {{ last_scrape.timestamp.strftime('%b %d, %I:%M %p') }} · {{ last_scrape.jobs_new or 0 }} new added · {{ last_scrape.jobs_found or 0 }} scraped · {{ "%.1fs"|format(last_scrape.duration or 0) }}
                         </div>
                     {% else %}
                         <div class="stat-pill">Not run yet</div>
@@ -65,7 +65,7 @@
                     <div class="label">Status</div>
                     <select id="statusFilter" class="select">
                         <option value="all">All</option>
-                        <option value="new">New</option>
+                        <option value="new" selected>New (not applied)</option>
                         <option value="applied">Applied</option>
                         <option value="phone_screen">Phone screen</option>
                         <option value="interview">Interview</option>
@@ -528,7 +528,7 @@
         remoteToggle.addEventListener('change', applyFilters);
         resetFilters.addEventListener('click', () => {
             scoreFilter.value = 50;
-            statusFilter.value = 'all';
+            statusFilter.value = 'new';
             searchFilter.value = '';
             remoteToggle.checked = false;
             applyFilters();

@@ -265,13 +265,14 @@ class SMSAlerter:
 class AlertManager:
     """Manages all alert delivery"""
     
-    def __init__(self, email_provider: str = None):
+    def __init__(self, email_provider: str = None, db = None):
         """
         Initialize alert manager
         
         Args:
             email_provider: Email provider to use ('smtp' or 'sendgrid')
                           If None, uses EMAIL_PROVIDER from env or defaults to 'smtp'
+            db: Database instance for tracking alerted jobs
         """
         # Default to smtp if not specified
         if email_provider is None:
@@ -279,10 +280,12 @@ class AlertManager:
         
         self.email = EmailAlerter(provider=email_provider)
         self.sms = SMSAlerter()
+        self.db = db
     
     def send_alerts(self, jobs: List[Dict[str, Any]], thresholds: Dict[str, int]) -> Dict[str, int]:
         """
         Send appropriate alerts based on job scores
+        Only sends alerts for jobs that haven't been alerted before
         
         Args:
             jobs: List of scored jobs
@@ -294,8 +297,29 @@ class AlertManager:
         immediate_threshold = thresholds.get('immediate', 70)
         digest_threshold = thresholds.get('digest', 50)
         
-        immediate_jobs = [j for j in jobs if j.get('fit_score', 0) >= immediate_threshold]
-        digest_jobs = [j for j in jobs if digest_threshold <= j.get('fit_score', 0) < immediate_threshold]
+        # Filter for jobs that haven't been alerted yet
+        unalerted_jobs = []
+        for job in jobs:
+            job_id = job.get('id')
+            if job_id and self.db:
+                # Check if already alerted
+                session = self.db.get_session()
+                try:
+                    from src.database.models import Job as JobModel
+                    db_job = session.query(JobModel).filter_by(id=job_id).first()
+                    if db_job and db_job.alerted_at is None:
+                        unalerted_jobs.append(job)
+                finally:
+                    session.close()
+            else:
+                # No ID or DB - send alert anyway (shouldn't happen)
+                unalerted_jobs.append(job)
+        
+        if len(jobs) > len(unalerted_jobs):
+            logger.info(f"Skipping {len(jobs) - len(unalerted_jobs)} jobs - already alerted")
+        
+        immediate_jobs = [j for j in unalerted_jobs if j.get('fit_score', 0) >= immediate_threshold]
+        digest_jobs = [j for j in unalerted_jobs if digest_threshold <= j.get('fit_score', 0) < immediate_threshold]
         
         stats = {'immediate': 0, 'digest': 0, 'skipped': 0}
         
@@ -303,10 +327,14 @@ class AlertManager:
         recipient_email = os.getenv('ALERT_EMAIL')
         recipient_sms = os.getenv('ALERT_SMS')
         
+        alerted_job_ids = []
+        
         for job in immediate_jobs:
             if recipient_email:
                 if self.email.send_immediate_alert(job, recipient_email):
                     stats['immediate'] += 1
+                    if job.get('id'):
+                        alerted_job_ids.append(job['id'])
             
             if recipient_sms and self.sms.enabled:
                 self.sms.send_alert(job, recipient_sms)
@@ -315,6 +343,27 @@ class AlertManager:
         if digest_jobs and recipient_email:
             if self.email.send_digest(digest_jobs, recipient_email):
                 stats['digest'] = len(digest_jobs)
+                for job in digest_jobs:
+                    if job.get('id'):
+                        alerted_job_ids.append(job['id'])
+        
+        # Mark jobs as alerted in database
+        if alerted_job_ids and self.db:
+            session = self.db.get_session()
+            try:
+                from src.database.models import Job as JobModel
+                from datetime import datetime
+                session.query(JobModel).filter(JobModel.id.in_(alerted_job_ids)).update(
+                    {JobModel.alerted_at: datetime.utcnow()},
+                    synchronize_session=False
+                )
+                session.commit()
+                logger.info(f"Marked {len(alerted_job_ids)} jobs as alerted")
+            except Exception as e:
+                logger.error(f"Error marking jobs as alerted: {e}")
+                session.rollback()
+            finally:
+                session.close()
         
         stats['skipped'] = len(jobs) - len(immediate_jobs) - len(digest_jobs)
         

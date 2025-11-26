@@ -19,11 +19,7 @@ from src.profile import HARVEY_PROFILE
 from src.scoring.engine import JobScorer
 from src.scrapers.linkedin import LinkedInScraper
 from src.scrapers.builtin import BuiltInNYCScraper
-from src.scrapers.indeed import IndeedScraper
-from src.scrapers.technyc import TechNYCScraper
-from src.scrapers.ziprecruiter import ZipRecruiterScraper
-from src.scrapers.angellist import AngelListScraper
-from src.scrapers.glassdoor import GlassdoorScraper
+from src.scrapers.yc_jobs import YCJobsScraper
 from src.alerts.notifications import AlertManager
 from src.applying.applicator import JobApplicator
 
@@ -40,20 +36,14 @@ class JobHunter:
         self.db.create_tables()
         
         self.scorer = JobScorer()
-        self.alert_manager = AlertManager()
+        self.alert_manager = AlertManager(db=self.db)
         self.applicator = JobApplicator()  # Auto-apply for high-scoring jobs
         
-        # Initialize scrapers - ONLY WORKING SCRAPERS ENABLED
+        # Initialize scrapers - LinkedIn, BuiltInNYC, and YC Jobs
         self.scrapers = {
             'linkedin': LinkedInScraper(),       # ~432 jobs per run
             'builtin': BuiltInNYCScraper(),      # ~150 jobs per run
-            'ziprecruiter': ZipRecruiterScraper(),  # NYC jobs
-            # Disabled: Need to update selectors for new site structure
-            # 'technyc': TechNYCScraper(),       # Getro-based platform, complex scraping
-            # Disabled: Anti-scraping protection
-            # 'indeed': IndeedScraper(),         # Blocked with 403 errors
-            # 'angellist': AngelListScraper(),
-            # 'glassdoor': GlassdoorScraper(),
+            'yc_jobs': YCJobsScraper(),          # ~100-200 startup jobs
         }
         
         # Configuration
@@ -70,74 +60,102 @@ class JobHunter:
             },
             'auto_apply': {
                 'enabled': True,  # Enable CV generation for high-scoring jobs
-                'min_score': 50.0  # Minimum score to generate CV (50%)
+                # Tiered approach for different customization levels
+                'tier_1_score': 60.0,  # High priority - heavy customization
+                'tier_2_score': 45.0,  # Medium priority - moderate customization
+                'tier_3_score': 40.0,  # Cast net - lighter customization
+                'max_per_run': 50      # Don't overwhelm with too many applications
             },
             'search_terms': {
                 'linkedin': [
+                    # ML/AI focused roles
                     'Machine Learning Engineer',
                     'ML Engineer',
                     'AI Engineer',
+                    'Applied Scientist',
+                    'Research Engineer',
+                    'AI Product Engineer',
+                    'MLOps Engineer',
+                    'ML Infrastructure Engineer',
+                    'Machine Learning Platform Engineer',
+                    'Computer Vision Engineer',
+                    
+                    # Backend engineering (FibreTrace experience)
                     'Software Engineer',
                     'Backend Engineer Python',
+                    'Python Software Engineer',
+                    'Python Backend Engineer',
+                    'Backend Software Engineer',
+                    'API Engineer',
+                    
+                    # Data engineering (supply chain/analytics background)
                     'Data Engineer Python',
                     'Analytics Engineer',
-                    'MLOps Engineer'
+                    'Data Platform Engineer',
+                    
+                    # Full-stack (iOS + backend experience)
+                    'Full Stack Engineer',
+                    'Full Stack Python',
+                    'Full Stack Machine Learning',
+                    
+                    # iOS/Mobile (Friday Technologies)
+                    'iOS Engineer',
+                    'Swift Developer',
+                    'Mobile Engineer iOS'
                 ],
                 'builtin': [
+                    # ML/AI
                     'machine learning',
+                    'ai engineer',
+                    'ml engineer',
+                    'applied scientist',
+                    
+                    # Backend
                     'software engineer',
                     'backend engineer',
-                    'ai engineer',
                     'python engineer',
-                    'analytics engineer'
+                    'python developer',
+                    'backend developer',
+                    
+                    # Data
+                    'analytics engineer',
+                    'data engineer',
+                    'data platform',
+                    
+                    # Full-stack
+                    'full stack engineer',
+                    'fullstack engineer'
                 ],
-                'indeed': [
-                    'Machine Learning Engineer',
-                    'AI Engineer',
-                    'Software Engineer',
-                    'Backend Engineer Python',
-                    'Data Engineer',
-                    'Analytics Engineer'
-                ],
-                'ziprecruiter': [
-                    'Machine Learning Engineer',
-                    'AI Engineer',
-                    'Software Engineer',
-                    'Backend Engineer',
-                    'Python Developer',
-                    'Data Engineer'
-                ],
-                'angellist': [
-                    'Machine Learning Engineer',
-                    'Software Engineer',
-                    'Backend Engineer',
-                    'AI Engineer',
-                    'Full Stack Engineer',
-                    'Python Engineer'
-                ],
-                'glassdoor': [
-                    'Machine Learning Engineer',
-                    'AI Engineer',
-                    'Software Engineer',
-                    'Backend Engineer Python',
-                    'Data Engineer',
-                    'MLOps Engineer'
-                ],
-                'technyc': [
-                    'Machine Learning Engineer',
-                    'Data Engineer',
-                    'AI Engineer',
-                    'Backend Engineer',
-                    'Software Engineer',
-                    'Full Stack Engineer',
-                    'Analytics Engineer',
-                    'MLOps'
+                'yc_jobs': [
+                    # YC-specific searches (similar to LinkedIn)
+                    'machine learning',
+                    'ml engineer',
+                    'ai engineer',
+                    'software engineer',
+                    'backend engineer',
+                    'full stack engineer',
+                    'python engineer'
                 ]
             },
             'locations': [
                 'New York, NY',
                 'Los Angeles, CA',
+                'San Francisco, CA',
+                'Seattle, WA',
+                'Austin, TX',
+                'Boston, MA',
                 'Remote'
+            ],
+            'exclude_keywords': [
+                'unpaid',
+                'volunteer',
+                'contractor only',
+                'contract only',
+                'no benefits',
+                'commission only',
+                'equity only',
+                'intern',
+                'internship'
             ],
             'max_jobs_per_source': 50
         }
@@ -161,191 +179,262 @@ class JobHunter:
             'alerts_sent': 0
         }
         
-        # 1. Scrape jobs
-        all_jobs = self._scrape_all_sources()
-        stats['jobs_found'] = len(all_jobs)
-        logger.info(f"Found {stats['jobs_found']} total jobs")
-        
-        # 2. Filter out duplicates BEFORE fetching descriptions (saves time!)
-        logger.info("Filtering duplicates before fetching descriptions...")
-        new_job_candidates = []
-        for job_data in all_jobs:
-            source_id = job_data.get('source_id')
-            url = job_data.get('url')
+        try:
+            # 1. Scrape jobs
+            all_jobs = self._scrape_all_sources()
+            stats['jobs_found'] = len(all_jobs)
+            logger.info(f"Scraped {stats['jobs_found']} total jobs from all sources (before deduplication)")
             
-            if self.db.job_exists(url=url, source_id=source_id):
-                stats['jobs_duplicate'] += 1
-                continue
+            # 2. Filter out duplicates BEFORE fetching descriptions (saves time!)
+            logger.info("Filtering duplicates before fetching descriptions...")
+            new_job_candidates = []
+            for job_data in all_jobs:
+                source_id = job_data.get('source_id')
+                url = job_data.get('url')
+                title = job_data.get('title', '').lower()
+                company = job_data.get('company')
+                location = job_data.get('location')
+                description = job_data.get('description', '').lower()
+                
+                # NEGATIVE KEYWORD FILTERING - skip time-wasters early
+                combined_text = f"{title} {description}"
+                exclude_keywords = self.config.get('exclude_keywords', [])
+                should_skip = False
+                for keyword in exclude_keywords:
+                    if keyword.lower() in combined_text:
+                        logger.debug(f"Skipping job due to keyword '{keyword}': {job_data.get('title')}")
+                        stats['jobs_duplicate'] += 1  # Count as filtered
+                        should_skip = True
+                        break
+                
+                if should_skip:
+                    continue
+                
+                # Check for duplicates by URL, source_id, AND company+title+location (catches reposts)
+                if self.db.job_exists(url=url, source_id=source_id, title=job_data.get('title'), company=company, location=location):
+                    stats['jobs_duplicate'] += 1
+                    continue
+                
+                # This is a new job - keep it for processing
+                new_job_candidates.append(job_data)
             
-            # This is a new job - keep it for processing
-            new_job_candidates.append(job_data)
-        
-        logger.info(f"After deduplication: {len(new_job_candidates)} new jobs to process ({stats['jobs_duplicate']} duplicates skipped)")
-        
-        # 3. Fetch descriptions ONLY for new jobs (huge time saver!)
-        logger.info("Fetching descriptions for new jobs only...")
-        jobs_with_descriptions = []
-        
-        for i, job_data in enumerate(new_job_candidates, 1):
-            source = job_data.get('source')
-            url = job_data.get('url')
+            logger.info(f"✓ After deduplication: {len(new_job_candidates)} NEW jobs to process, {stats['jobs_duplicate']} duplicates skipped")
             
-            # Get the appropriate scraper
-            scraper = None
-            if source == 'linkedin':
-                scraper = self.scrapers.get('linkedin')
-            elif source == 'builtin_nyc':
-                scraper = self.scrapers.get('builtin')
-            elif source == 'indeed':
-                scraper = self.scrapers.get('indeed')
-            elif source == 'technyc':
-                scraper = self.scrapers.get('technyc')
+            # 3. Fetch descriptions ONLY for new jobs (huge time saver!)
+            logger.info("Fetching descriptions for new jobs only...")
+            jobs_with_descriptions = []
             
-            # Fetch description for this specific job
-            if scraper and hasattr(scraper, 'fetch_single_job_description'):
+            for i, job_data in enumerate(new_job_candidates, 1):
+                source = job_data.get('source')
+                url = job_data.get('url')
+                
+                # Get the appropriate scraper
+                scraper = None
+                if source == 'linkedin':
+                    scraper = self.scrapers.get('linkedin')
+                elif source == 'builtin_nyc':
+                    scraper = self.scrapers.get('builtin')
+                elif source == 'yc_jobs':
+                    scraper = self.scrapers.get('yc_jobs')
+                
+                # Fetch description for this specific job
+                if scraper and hasattr(scraper, 'fetch_single_job_description'):
+                    try:
+                        description = scraper.fetch_single_job_description(url)
+                        job_data['description'] = description
+                        if i % 10 == 0:
+                            logger.info(f"Fetched descriptions for {i}/{len(new_job_candidates)} new jobs...")
+                    except Exception as e:
+                        logger.debug(f"Error fetching description for {url}: {e}")
+                        job_data['description'] = ""
+                
+                jobs_with_descriptions.append(job_data)
+            
+            logger.info(f"Fetched descriptions for {len(jobs_with_descriptions)} new jobs")
+            
+            # 4. Score and save new jobs
+            new_jobs = []
+            for job_data in jobs_with_descriptions:
+                # Score the job
+                score_result = self.scorer.score_job(job_data)
+                
+                # Merge scoring data with job data
+                job_record = {
+                    **job_data,
+                    'fit_score': score_result['fit_score'],
+                    'reasoning': score_result['reasoning'],
+                    'tech_matches': score_result['matches']['tech'],
+                    'industry_matches': score_result['matches']['industry'],
+                    'role_matches': score_result['matches']['role'],
+                    'visa_status': score_result['visa_status'],
+                    'visa_keywords_found': score_result['matches'].get('visa_keywords', [])
+                }
+                
+                # Save to database
                 try:
-                    description = scraper.fetch_single_job_description(url)
-                    job_data['description'] = description
-                    if i % 10 == 0:
-                        logger.info(f"Fetched descriptions for {i}/{len(new_job_candidates)} new jobs...")
+                    saved_job = self.db.add_job(job_record)
+                    job_record['id'] = saved_job.id
+                    new_jobs.append(job_record)
+                    stats['jobs_new'] += 1
+                    
+                    logger.debug(f"Saved: {job_record['title']} (Score: {job_record['fit_score']})")
                 except Exception as e:
-                    logger.debug(f"Error fetching description for {url}: {e}")
-                    job_data['description'] = ""
+                    logger.error(f"Error saving job: {e}")
             
-            jobs_with_descriptions.append(job_data)
-        
-        logger.info(f"Fetched descriptions for {len(jobs_with_descriptions)} new jobs")
-        
-        # 4. Score and save new jobs
-        new_jobs = []
-        for job_data in jobs_with_descriptions:
-            # Score the job
-            score_result = self.scorer.score_job(job_data)
+            logger.info(f"Processed {stats['jobs_new']} new jobs ({stats['jobs_duplicate']} duplicates)")
             
-            # Merge scoring data with job data
-            job_record = {
-                **job_data,
-                'fit_score': score_result['fit_score'],
-                'reasoning': score_result['reasoning'],
-                'tech_matches': score_result['matches']['tech'],
-                'industry_matches': score_result['matches']['industry'],
-                'role_matches': score_result['matches']['role'],
-                'visa_status': score_result['visa_status'],
-                'visa_keywords_found': score_result['matches'].get('visa_keywords', [])
-            }
-            
-            # Save to database
-            try:
-                saved_job = self.db.add_job(job_record)
-                job_record['id'] = saved_job.id
-                new_jobs.append(job_record)
-                stats['jobs_new'] += 1
+            # 5. Send alerts for high matches
+            if new_jobs:
+                high_matches = [j for j in new_jobs if j['fit_score'] >= self.config['thresholds']['immediate']]
+                stats['high_matches'] = len(high_matches)
                 
-                logger.debug(f"Saved: {job_record['title']} (Score: {job_record['fit_score']})")
-            except Exception as e:
-                logger.error(f"Error saving job: {e}")
-        
-        logger.info(f"Processed {stats['jobs_new']} new jobs ({stats['jobs_duplicate']} duplicates)")
-        
-        # 5. Send alerts for high matches
-        if new_jobs:
-            high_matches = [j for j in new_jobs if j['fit_score'] >= self.config['thresholds']['immediate']]
-            stats['high_matches'] = len(high_matches)
-            
-            alert_stats = self.alert_manager.send_alerts(new_jobs, self.config['thresholds'])
-            stats['alerts_sent'] = alert_stats['immediate']
-            
-            logger.info(f"Found {stats['high_matches']} high-match jobs, sent {stats['alerts_sent']} alerts")
-        
-        # 6. Auto-apply to jobs with score >= 50%
-        applications_prepared = []
-        if self.config.get('auto_apply', {}).get('enabled', False):
-            try:
-                logger.info("Processing jobs for auto-apply...")
+                alert_stats = self.alert_manager.send_alerts(new_jobs, self.config['thresholds'])
+                stats['alerts_sent'] = alert_stats['immediate']
                 
-                # Get high-scoring jobs from this batch (>= 50%)
-                eligible_jobs = [j for j in new_jobs if j.get('fit_score', 0) >= 50.0]
-                
-                if eligible_jobs:
-                    logger.info(f"Found {len(eligible_jobs)} jobs with score >= 50% for auto-apply")
+                logger.info(f"Found {stats['high_matches']} high-match jobs, sent {stats['alerts_sent']} alerts")
+            
+            # 6. Auto-apply with TIERED scoring approach
+            applications_prepared = []
+            if self.config.get('auto_apply', {}).get('enabled', False):
+                try:
+                    logger.info("Processing jobs for tiered auto-apply...")
                     
-                    # Prepare score results dict for applicator
-                    score_results = {}
-                    for job in eligible_jobs:
-                        job_key = job.get('url') or job.get('source_id')
-                        if job_key:
-                            score_results[job_key] = {
-                                'fit_score': job.get('fit_score', 0),
-                                'visa_status': job.get('visa_status', 'none'),
-                                'seniority_ok': True,  # Already filtered during scoring
-                                'location_ok': True,   # Already filtered during scoring
-                                'reasoning': job.get('reasoning', ''),
-                                'tech_matches': job.get('tech_matches', []),
-                                'role_matches': job.get('role_matches', []),
-                                'industry_matches': job.get('industry_matches', [])
-                            }
+                    # Get thresholds for 3 tiers
+                    tier_1_score = self.config['auto_apply'].get('tier_1_score', 60.0)
+                    tier_2_score = self.config['auto_apply'].get('tier_2_score', 45.0)
+                    tier_3_score = self.config['auto_apply'].get('tier_3_score', 40.0)
+                    max_per_run = self.config['auto_apply'].get('max_per_run', 50)
                     
-                    # Process applications
-                    apply_results = self.applicator.process_jobs(
-                        jobs=eligible_jobs,
-                        score_results=score_results
-                    )
+                    # Separate jobs into tiers
+                    tier_1_jobs = [j for j in new_jobs if j.get('fit_score', 0) >= tier_1_score]
+                    tier_2_jobs = [j for j in new_jobs if tier_2_score <= j.get('fit_score', 0) < tier_1_score]
+                    tier_3_jobs = [j for j in new_jobs if tier_3_score <= j.get('fit_score', 0) < tier_2_score]
                     
-                    stats['cvs_generated'] = apply_results.get('applications_prepared', 0)
-                    stats['jobs_skipped'] = apply_results.get('total_jobs', 0) - stats['cvs_generated']
-                    applications_prepared = apply_results.get('applications', [])
+                    # Combine tiers (prioritize high scores, but limit total)
+                    eligible_jobs = (tier_1_jobs + tier_2_jobs + tier_3_jobs)[:max_per_run]
                     
                     logger.info(
-                        f"Auto-apply: Generated {stats['cvs_generated']} CVs, "
-                        f"skipped {stats['jobs_skipped']} jobs"
+                        f"Tiered breakdown: Tier 1 (≥{tier_1_score}%): {len(tier_1_jobs)}, "
+                        f"Tier 2 ({tier_2_score}-{tier_1_score}%): {len(tier_2_jobs)}, "
+                        f"Tier 3 ({tier_3_score}-{tier_2_score}%): {len(tier_3_jobs)}"
                     )
-                else:
-                    logger.info("No jobs with score >= 50% found for auto-apply")
+                    
+                    if eligible_jobs:
+                        logger.info(f"Processing top {len(eligible_jobs)} jobs for auto-apply (max: {max_per_run})")
+                        
+                        # Prepare score results dict for applicator
+                        score_results = {}
+                        for job in eligible_jobs:
+                            job_key = job.get('url') or job.get('source_id')
+                            if job_key:
+                                # Determine tier for metadata
+                                score = job.get('fit_score', 0)
+                                if score >= tier_1_score:
+                                    tier = 'tier_1_high_priority'
+                                elif score >= tier_2_score:
+                                    tier = 'tier_2_medium_priority'
+                                else:
+                                    tier = 'tier_3_broader_net'
+                                
+                                score_results[job_key] = {
+                                    'fit_score': score,
+                                    'tier': tier,
+                                    'visa_status': job.get('visa_status', 'none'),
+                                    'seniority_ok': True,  # Already filtered during scoring
+                                    'location_ok': True,   # Already filtered during scoring
+                                    'reasoning': job.get('reasoning', ''),
+                                    'tech_matches': job.get('tech_matches', []),
+                                    'role_matches': job.get('role_matches', []),
+                                    'industry_matches': job.get('industry_matches', [])
+                                }
+                        
+                        # Process applications
+                        apply_results = self.applicator.process_jobs(
+                            jobs=eligible_jobs,
+                            score_results=score_results
+                        )
+                        
+                        stats['cvs_generated'] = apply_results.get('applications_prepared', 0)
+                        stats['jobs_skipped'] = apply_results.get('total_jobs', 0) - stats['cvs_generated']
+                        applications_prepared = apply_results.get('applications', [])
+                        
+                        logger.info(
+                            f"Auto-apply: Generated {stats['cvs_generated']} CVs, "
+                            f"skipped {stats['jobs_skipped']} jobs"
+                        )
+                    else:
+                        logger.info("No jobs with score >= 50% found for auto-apply")
+                        stats['cvs_generated'] = 0
+                        stats['jobs_skipped'] = 0
+                except Exception as e:
+                    logger.error(f"Error in auto-apply: {e}")
                     stats['cvs_generated'] = 0
-                    stats['jobs_skipped'] = 0
-            except Exception as e:
-                logger.error(f"Error in auto-apply: {e}")
-                stats['cvs_generated'] = 0
-        
-        # 7. Email CVs to user if any were generated
-        if applications_prepared:
-            try:
-                from src.applying.email_sender import ApplicationEmailer
-                
-                emailer = ApplicationEmailer()
-                email_sent = emailer.send_application_batch(
-                    applications=applications_prepared,
-                    summary_stats=stats
-                )
-                
-                if email_sent:
-                    logger.info(f"✓ Emailed {len(applications_prepared)} CVs to user")
-                    stats['email_sent'] = True
-                else:
-                    logger.info("CV email disabled or failed")
+            
+            # 7. Email CVs to user if any were generated
+            if applications_prepared:
+                try:
+                    from src.applying.email_sender import ApplicationEmailer
+                    
+                    # Add total_jobs count to stats for email
+                    stats['total_jobs'] = self.db.get_application_stats()['total_jobs']
+                    
+                    emailer = ApplicationEmailer()
+                    email_sent = emailer.send_application_batch(
+                        applications=applications_prepared,
+                        summary_stats=stats
+                    )
+                    
+                    if email_sent:
+                        logger.info(f"✓ Emailed {len(applications_prepared)} CVs to user")
+                        stats['email_sent'] = True
+                    else:
+                        logger.info("CV email disabled or failed")
+                        stats['email_sent'] = False
+                except Exception as e:
+                    logger.error(f"Error sending CV email: {e}")
                     stats['email_sent'] = False
+                    stats['jobs_skipped'] = 0
+        
+        except Exception as e:
+            # Catch any errors in the main run loop
+            logger.error(f"Error in job hunt cycle: {e}", exc_info=True)
+            stats['error'] = str(e)
+        
+        finally:
+            # 8. Log search history (ALWAYS log, even if there were errors)
+            try:
+                duration = (datetime.now() - start_time).total_seconds()
+                total_in_db = self.db.get_application_stats()['total_jobs']
+                
+                self.db.add_search_history({
+                    'source': 'all',
+                    'jobs_found': stats['jobs_found'],
+                    'jobs_new': stats['jobs_new'],
+                    'jobs_duplicate': stats['jobs_duplicate'],
+                    'duration_seconds': duration,
+                    'success': 'error' not in stats
+                })
+                
+                logger.info("=" * 80)
+                logger.info(f"✓ Job hunt cycle complete in {duration:.1f}s")
+                logger.info(f"  Scraped: {stats['jobs_found']} jobs from all sources")
+                logger.info(f"  New: {stats['jobs_new']} jobs added to database")
+                logger.info(f"  Duplicates: {stats['jobs_duplicate']} jobs already in database")
+                logger.info(f"  Total in database: {total_in_db} jobs")
+                if 'cvs_generated' in stats:
+                    logger.info(f"  CVs generated: {stats.get('cvs_generated', 0)} for high-scoring jobs")
+                if 'error' in stats:
+                    logger.info(f"  ⚠️  Error occurred: {stats['error']}")
+                logger.info("=" * 80)
             except Exception as e:
-                logger.error(f"Error sending CV email: {e}")
-                stats['email_sent'] = False
-                stats['jobs_skipped'] = 0
+                logger.error(f"Error logging search history: {e}")
         
-        # 7. Log search history
-        duration = (datetime.now() - start_time).total_seconds()
-        self.db.add_search_history({
-            'source': 'all',
-            'jobs_found': stats['jobs_found'],
-            'jobs_new': stats['jobs_new'],
-            'jobs_duplicate': stats['jobs_duplicate'],
-            'duration_seconds': duration,
-            'success': True
-        })
-        
-        logger.info(f"Job hunt cycle complete in {duration:.1f}s")
         return stats
     
     def _scrape_all_sources(self) -> List[Dict[str, Any]]:
         """Scrape jobs from all enabled sources across all configured locations"""
         all_jobs = []
+        seen_job_ids = set()  # Track unique jobs by source_id or URL
         
         locations = self.config.get('locations', ['New York, NY'])  # Default to NYC if not specified
         
@@ -359,9 +448,18 @@ class JobHunter:
                     search_terms = self.config['search_terms'].get(source_name, [])
                     
                     jobs = scraper.search_jobs(search_terms, location)
-                    all_jobs.extend(jobs)
                     
-                    logger.info(f"    Got {len(jobs)} jobs from {source_name} in {location}")
+                    # Deduplicate within this scrape run
+                    unique_jobs_count = 0
+                    for job in jobs:
+                        # Use source_id for deduplication (more reliable than URL)
+                        job_id = job.get('source_id') or job.get('url')
+                        if job_id and job_id not in seen_job_ids:
+                            seen_job_ids.add(job_id)
+                            all_jobs.append(job)
+                            unique_jobs_count += 1
+                    
+                    logger.info(f"    Got {len(jobs)} jobs from {source_name} in {location} ({unique_jobs_count} unique)")
                     
                     # Log individual source+location history
                     self.db.add_search_history({
@@ -379,7 +477,7 @@ class JobHunter:
                         'errors': str(e)
                     })
         
-        logger.info(f"Total jobs scraped across all locations: {len(all_jobs)}")
+        logger.info(f"Total jobs scraped across all locations: {len(all_jobs)} unique jobs from {len(seen_job_ids)} total")
         return all_jobs
     
     def get_top_matches(self, limit: int = 10) -> List[Dict[str, Any]]:

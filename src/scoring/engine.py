@@ -25,22 +25,23 @@ except ImportError:
 class JobScorer:
     """
     Scores job listings on a 0-100 scale based on:
-    - AI Semantic Match (40%) - NEW! Uses transformers to understand meaning
-    - Technical stack match (25%)
-    - Industry match (15%)
+    - AI Semantic Match (50%) - OPTIMIZED! Trust AI understanding more
+    - Technical stack match (20%)
+    - Industry match (12%)
     - Role match (10%)
     - Eligibility match (5%)
-    - Visa friendliness (5%)
+    - Visa friendliness (3%)
     """
     
     # Scoring weights (must sum to 100)
+    # Optimized to trust AI semantic matching over keyword matching
     WEIGHTS = {
-        'ai_semantic': 40,  # NEW: AI-powered understanding
-        'technical': 25,
-        'industry': 15,
-        'role': 10,
-        'eligibility': 5,
-        'visa': 5
+        'ai_semantic': 50,  # UP from 40 - AI understands context better
+        'technical': 20,    # DOWN from 25 - AI captures this
+        'industry': 12,     # DOWN from 15 - AI captures this
+        'role': 10,         # SAME - still important
+        'eligibility': 5,   # SAME - concrete requirements
+        'visa': 3           # DOWN from 5 - E-3 is easy, don't over-penalize
     }
     
     # Section headers that indicate eligibility requirements

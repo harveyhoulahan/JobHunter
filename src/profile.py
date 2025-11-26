@@ -256,7 +256,20 @@ HARVEY_PROFILE = {
             "Medical research systems",
             "Clinical data platforms"
         ]
-    }
+    },
+    
+    # Quantifiable achievements (for AI semantic matching optimization)
+    # These help the AI scorer understand IMPACT not just skills
+    "achievements": [
+        "Built ML-powered traceability systems trusted by Target and Cargill processing millions of supply chain data points",
+        "Deployed production iOS apps with CoreML models to Apple App Store with 4.8+ star ratings",
+        "Architected scalable backend APIs serving enterprise clients with 99.9% uptime",
+        "Implemented RAG systems and LLM-powered features for document processing at scale",
+        "Developed real-time data pipelines processing sensor data from IoT devices",
+        "Created AI-powered analytics platforms for sustainability tracking in fashion industry",
+        "Built full-stack applications combining Python backends with Swift/iOS frontends",
+        "Designed and deployed cloud infrastructure on AWS for enterprise workloads"
+    ]
 }
 
 

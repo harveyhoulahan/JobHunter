@@ -182,10 +182,10 @@ class ApplicationEmailer:
             <div style="display: flex; justify-content: space-around; text-align: center;">
                 <div>
                     <div style="font-size: 32px; font-weight: 700; color: #667eea;">
-                        {summary_stats.get('jobs_found', 0)}
+                        {summary_stats.get('total_jobs', 0)}
                     </div>
                     <div style="color: #6b7280; font-size: 14px; margin-top: 4px;">
-                        Jobs Found
+                        Total in Database
                     </div>
                 </div>
                 <div>
@@ -193,7 +193,7 @@ class ApplicationEmailer:
                         {summary_stats.get('jobs_new', 0)}
                     </div>
                     <div style="color: #6b7280; font-size: 14px; margin-top: 4px;">
-                        New Jobs
+                        New This Run
                     </div>
                 </div>
                 <div>

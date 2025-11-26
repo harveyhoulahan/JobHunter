@@ -136,22 +136,40 @@ class Database:
         """Get a new database session"""
         return self.SessionLocal()
     
-    def job_exists(self, url: str = None, source_id: str = None) -> bool:
+    def job_exists(self, url: str = None, source_id: str = None, title: str = None, company: str = None, location: str = None) -> bool:
         """
-        Check if job already exists by URL or source_id
-        Prioritizes source_id for better deduplication (avoids URL param differences)
+        Check if job already exists by URL, source_id, or company+title+location combo
+        This catches reposts where companies repost the same job with a new LinkedIn ID
         """
         session = self.get_session()
         try:
             if source_id:
-                # Check by source_id first (more reliable for LinkedIn etc.)
-                return session.query(Job).filter_by(source_id=source_id).first() is not None
-            elif url:
-                # Fallback to URL check
-                # Clean URL of query parameters for better matching
+                # Check by source_id first (most reliable)
+                if session.query(Job).filter_by(source_id=source_id).first() is not None:
+                    return True
+            
+            if url:
+                # Check by URL
                 base_url = url.split('?')[0]
-                existing = session.query(Job).filter(Job.url.like(f"{base_url}%")).first()
-                return existing is not None
+                if session.query(Job).filter(Job.url.like(f"{base_url}%")).first() is not None:
+                    return True
+            
+            # NEW: Check for reposts - same company+title+location posted within last 7 days
+            if title and company and location:
+                from datetime import datetime, timedelta
+                seven_days_ago = datetime.utcnow() - timedelta(days=7)
+                
+                existing = session.query(Job).filter(
+                    Job.company == company,
+                    Job.title == title,
+                    Job.location == location,
+                    Job.created_at >= seven_days_ago
+                ).first()
+                
+                if existing is not None:
+                    logger.debug(f"Duplicate detected: {title} at {company} (repost from {existing.created_at})")
+                    return True
+            
             return False
         finally:
             session.close()

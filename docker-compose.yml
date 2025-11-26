@@ -5,7 +5,7 @@ services:
     command: ["python", "src/scheduler/run.py"]
     restart: unless-stopped
     volumes:
-      - ./data:/app/data
+      - ./src/data:/app/src/data
       - ./logs:/app/logs
       - ./config:/app/config
       - ./applications:/app/applications
@@ -22,7 +22,7 @@ services:
     ports:
       - "5002:5002"
     volumes:
-      - ./data:/app/data
+      - ./src/data:/app/src/data
       - ./logs:/app/logs
       - ./config:/app/config
       - ./applications:/app/applications

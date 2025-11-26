@@ -84,6 +84,11 @@ class AIJobScorer:
         # Combine all profile information into text
         profile_text = []
         
+        # Add achievements FIRST (most important for impact-based matching)
+        if 'achievements' in HARVEY_PROFILE and HARVEY_PROFILE['achievements']:
+            profile_text.append("Key Achievements:")
+            profile_text.extend(HARVEY_PROFILE['achievements'])
+        
         # Add skills
         if 'skills' in HARVEY_PROFILE:
             for category, skills in HARVEY_PROFILE['skills'].items():

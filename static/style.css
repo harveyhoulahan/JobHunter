@@ -627,9 +627,126 @@ body {
 }
 
 @media (max-width: 900px) {
-    body { padding: 18px; }
-    .hero { grid-template-columns: 1fr; }
-    .header { flex-direction: column; align-items: flex-start; }
+    body { 
+        padding: 12px; 
+    }
+    
+    .page {
+        margin-bottom: 40px;
+    }
+    
+    .hero { 
+        grid-template-columns: 1fr; 
+        gap: 20px;
+    }
+    
+    .header { 
+        flex-direction: column; 
+        align-items: flex-start; 
+        padding: 16px 20px;
+    }
+    
+    .brand {
+        font-size: 20px;
+    }
+    
+    .nav {
+        width: 100%;
+    }
+    
+    .nav a {
+        flex: 1;
+        text-align: center;
+        padding: 12px 14px;
+        font-size: 13px;
+    }
+    
+    .hero-card h1 {
+        font-size: 28px;
+        line-height: 1.2;
+    }
+    
+    .hero-card p {
+        font-size: 15px;
+    }
+    
+    .hero-actions {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .hero-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .filters-row {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .stat-card {
+        padding: 16px;
+    }
+    
+    .stat-card h3 {
+        font-size: 13px;
+    }
+    
+    .stat-card .value {
+        font-size: 28px;
+    }
+    
+    .job-card {
+        padding: 18px;
+    }
+    
+    .job-title {
+        font-size: 16px;
+    }
+    
+    .job-actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .job-actions .btn {
+        width: 100%;
+        justify-content: center;
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+    
+    .modal-content {
+        width: 95%;
+        max-width: 95%;
+        margin: 20px auto;
+        padding: 20px;
+    }
+    
+    .section-title {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .section-title h2 {
+        font-size: 22px;
+    }
+    
+    .tags {
+        flex-wrap: wrap;
+    }
+    
+    .chip {
+        font-size: 11px;
+        padding: 4px 10px;
+    }
 }
 
 /* Detail view */
