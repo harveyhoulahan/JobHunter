@@ -18,6 +18,9 @@ config/settings.yaml
 # Database
 data/*.db
 data/*.db-journal
+src/data/*.db
+src/data/*.db-journal
+*.db
 *.sqlite
 *.sqlite3
 
