@@ -613,9 +613,58 @@
                 const title = btn.dataset.title;
                 viewCoverLetter(jobId, company, title);
             }
+            
+            if (e.target.closest('.hide-job-btn')) {
+                const btn = e.target.closest('.hide-job-btn');
+                const jobId = parseInt(btn.dataset.jobId);
+                hideJob(jobId, btn);
+            }
         });
 
+        // Hide job (client-side only, persists in localStorage)
+        function hideJob(jobId, button) {
+            const card = button.closest('.job-card');
+            card.style.opacity = '0.5';
+            card.style.pointerEvents = 'none';
+            
+            // Store hidden jobs in localStorage
+            let hiddenJobs = JSON.parse(localStorage.getItem('hiddenJobs') || '[]');
+            if (!hiddenJobs.includes(jobId)) {
+                hiddenJobs.push(jobId);
+                localStorage.setItem('hiddenJobs', JSON.stringify(hiddenJobs));
+            }
+            
+            setTimeout(() => {
+                card.style.display = 'none';
+                updateVisibleCount();
+            }, 300);
+            
+            showToast('✓ Job hidden');
+        }
+
+        // Hide already-hidden jobs on page load
+        function applyHiddenJobs() {
+            const hiddenJobs = JSON.parse(localStorage.getItem('hiddenJobs') || '[]');
+            hiddenJobs.forEach(jobId => {
+                const card = document.querySelector(`.hide-job-btn[data-job-id="${jobId}"]`)?.closest('.job-card');
+                if (card) {
+                    card.style.display = 'none';
+                }
+            });
+            updateVisibleCount();
+        }
+
+        function updateVisibleCount() {
+            const visible = Array.from(document.querySelectorAll('.job-card'))
+                .filter(card => card.style.display !== 'none').length;
+            const countEl = document.getElementById('visibleCount');
+            if (countEl) countEl.textContent = visible;
+        }
+
         window.onload = applyFilters;
+        
+        // Apply hidden jobs on load
+        window.addEventListener('DOMContentLoaded', applyHiddenJobs);
     </script>
 </body>
 </html>
