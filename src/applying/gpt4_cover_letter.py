@@ -91,40 +91,37 @@ class GPT4CoverLetterGenerator:
     
     def _get_system_prompt(self) -> str:
         """System prompt that defines GPT-4's role and style"""
-        return """You write cover letters for a senior software engineer. The goal is concise, professional, and human.
+        return """You write technical cover letters for a software engineer. Use this EXACT style:
 
-Key principles:
-- Get to the point. No fluff, no preamble.
-- Write like a professional who's done the work, not trying to impress.
-- Specific examples with numbers. "Built X that did Y" not "passionate about building."
-- Natural language. How you'd explain it to another engineer, not HR.
-- Short. 250-350 words max. 3 paragraphs.
+REFERENCE EXAMPLE:
+"Centene's mission in improving health outcomes with technology resonates with my background building high-reliability software across data-heavy domains (energy systems, supply chains, and consumer apps). I've delivered production modules spanning service interfaces, business logic, UI, and data access layers in Python, C, and C#; I also work comfortably with Java/Go stacks and modern front-ends (React) on AWS.
 
-What makes it good:
-- Opens with why you're interested in THIS role at THIS company
-- Middle paragraph: relevant work you've done with concrete details
-- Close: why it's a fit, no begging
+At the Australian Energy Market Operator (AEMO), I engineered end-to-end data flows over large market datasets (MMS/NEM/NEMWeb), including:
+• High-throughput C parsers for telemetry/market files (streaming validation, memory-mapped I/O), with Python bindings feeding ETL and analytics dashboards used in real-time operations.
+• C# microservices interfacing with MMS schemas/APIs and SQL stores (retryable jobs, schema-aware transforms, RBAC/audit), reducing reporting latency and improving reliability for PASA/dispatch workflows.
 
-What to avoid:
-- AI tells: "delve", "landscape", "leverage", "harness", "realm", "revolutionize"
-- Flowery language: "eager to explore", "kindred spirit", "audacity"  
-- Overly casual: "Hey there", "jumping in", "let's make it happen"
-- Marketing speak: "cutting-edge", "innovative", "game-changing"
-- Unnecessary adjectives and adverbs
-- Opening questions or dramatic statements
-- Any phrase that sounds like ChatGPT
+I'm excited to bring the same discipline to Centene: implementing well-factored services and process flows, shaping designs that meet functional/non-functional requirements, and contributing to secure, testable code that scales."
 
-Tone:
-- Professional but direct
-- Confident from competence, not hype
-- Conversational without being casual
-- Technical enough to show you know what you're talking about
+STRUCTURE (3 paragraphs):
+1. Opening: "[Company]'s mission/focus in [X] resonates with my background building [Y] across [domains]. I've delivered [specific tech/systems] in [languages/stack]."
 
-Format:
-- No address header or date
-- Start with a clear opening sentence
-- 3 paragraphs total
-- Sign off: "Best, Harvey Houlahan"
+2. Experience bullets: "At [Company], I [built/engineered/developed] [system], including:
+   • [Specific technical achievement with metrics/tech stack]
+   • [Another achievement with technical details]"
+
+3. Close: "I'm excited to bring the same discipline to [Company]: [what you'll do]. I would value the chance to discuss how my experience in [tech stack] can help [Company] [achieve X]."
+
+KEY STYLE POINTS:
+- Technical density: mention specific frameworks, patterns, metrics
+- Bullet points with parenthetical tech details: "(streaming validation, memory-mapped I/O)"
+- Action verbs: engineered, built, delivered, shipped, implemented
+- Concrete outcomes: "reducing latency", "improving reliability", "used in real-time operations"
+- Sign off: "Sincerely, Harvey Houlahan" (NOT "Best")
+
+FORBIDDEN:
+- Do NOT use: "drawn to", "aligns", "honed", "spearheaded", "robust", "leveraging", "passionate", "innovative", "cutting-edge"
+- Do NOT be casual or flowery
+- Do NOT sound like marketing copy
 """
     
     def _build_prompt(
@@ -179,30 +176,38 @@ Technical Alignment: {', '.join(tech_matches[:5]) if tech_matches else 'General 
 Role Alignment: {', '.join(role_matches[:3]) if role_matches else 'Software engineering'}
 """
         
-        prompt = f"""Write a cover letter for this job:
+        prompt = f"""Write a technical cover letter for this job using the EXACT style from the reference example:
 
 ROLE: {title}
 COMPANY: {company}
 {company_insights}
 
-JOB DESCRIPTION (truncated):
+JOB DESCRIPTION (key excerpts):
 {description[:2000]}
 
 {profile_summary}
 
 {match_analysis}
 
-EXAMPLE OF GOOD WRITING:
-"I want to work at {company} on {title} because you're building AI systems for IT management. I've built similar ML systems at scale.
+INSTRUCTIONS:
+Follow the reference example structure EXACTLY:
 
-At FibreTrace, I built an analytics platform that processes 1M+ data points daily from cotton supply chains. The system uses PyTorch for real-time tracking and predictive models, serving clients like Target and Cargill. At Friday Technologies, I developed iOS apps with Core ML integration for Apple-recognized products.
+Paragraph 1: "{company}'s [mission/focus] in [what they do] resonates with my background building [relevant systems] across [domains]. I've delivered [specific modules/systems] in [tech stack list]."
 
-My experience with production ML systems, NLP, and LLMs fits what you need for this role."
+Paragraph 2: "At [FibreTrace or Friday Technologies], I [engineered/built/developed] [specific system], including:
+• [Technical achievement with parenthetical details about tech/metrics]
+• [Another achievement with technical depth]
+• [Optional third bullet]"
 
-BANNED WORDS - REWRITE IF YOU USE THESE:
-"drawn", "aligns", "resonates", "honed", "spearheaded", "robust", "pivotal", "leveraging", "transforming", "excited", "passionate", "unique", "shaping", "redefining", "innovative", "cutting-edge", "matches", "ambitions"
+Add second company if relevant with similar format.
 
-Write like the example above. Direct, specific, no fluff:"""
+Paragraph 3: "I'm excited to bring the same discipline to {company}: [what you'll contribute]. I would value the chance to discuss how my experience in [list tech stack] can help {company} [achieve their goal]."
+
+Sign off: "Sincerely, Harvey Houlahan"
+
+CRITICAL: Match the technical density and parenthetical style: "(PyTorch, real-time inference)", "(streaming validation, memory-mapped I/O)", etc.
+
+Write the cover letter:"""
         
         return prompt
     
@@ -211,17 +216,18 @@ Write like the example above. Direct, specific, no fluff:"""
         company = job_data.get('company', 'your company')
         title = job_data.get('title', 'this role')
         
-        return f"""I'm writing to express my strong interest in the {title} position at {company}.
+        return f"""I'm writing to express my interest in the {title} position at {company}.
 
-With my background in machine learning engineering at FibreTrace, where I built production ML pipelines processing supply chain data at scale, I'm excited about the opportunity to bring my experience in PyTorch, Python, and scalable ML systems to your team.
+At FibreTrace, I built production ML systems that process supply chain data at enterprise scale for clients like Target and Cargill. The work included:
+• ML-powered analytics platform handling 1M+ data points daily (PyTorch, real-time inference)
+• Scalable data pipelines for traceability tracking (Python, AWS Lambda, S3)
+• Production model deployment with monitoring and observability
 
-At FibreTrace, I designed and deployed ML models handling 100,000+ daily predictions, built real-time feature engineering pipelines, and collaborated across teams to deliver production systems that created measurable business impact. This hands-on experience with the full ML lifecycle—from data processing to model deployment—aligns well with the challenges outlined in your job description.
+At Friday Technologies, I developed iOS applications with Core ML integration, delivering Apple-recognized products combining device capabilities with intelligent features.
 
-I'm particularly drawn to {company} because of your work in this space. As an E-3 visa eligible candidate, I can start quickly and am excited to contribute to your mission.
+I'm excited to bring the same technical discipline to {company}. I would value the chance to discuss how my experience in Python, PyTorch, AWS, and production ML systems can help {company} achieve its goals.
 
-I'd love to discuss how my experience building production ML systems can add value to your team. Thank you for considering my application.
-
-Best regards,
+Sincerely,
 Harvey Houlahan"""
 
 
