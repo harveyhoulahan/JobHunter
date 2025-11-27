@@ -8,12 +8,13 @@ An intelligent, automated job monitoring system that continuously scans multiple
 
 ### Core Features
 
-- **Multi-Source Monitoring**: LinkedIn, Indeed, ZipRecruiter, AngelList, and more
+- **Multi-Source Monitoring**: LinkedIn, BuiltIn, Y Combinator, Seek (Australia), and more
 - **Smart Matching**: 0-100 fit scoring based on tech stack, industry, role, and visa sponsorship
 - **Real-Time Alerts**: Email/SMS notifications for high-quality matches
 - **E-3 Visa Optimization**: Prioritizes visa-friendly employers
 - **Deduplication**: Prevents duplicate alerts across sources
 - **Continuous Operation**: Runs every 3 hours automatically
+- **Global Coverage**: US and Australian job markets with location-based scraper activation
 
 ## Architecture
 

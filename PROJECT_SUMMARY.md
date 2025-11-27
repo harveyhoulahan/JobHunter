@@ -16,9 +16,10 @@ JobHunter/
 │   │
 │   ├── scrapers/
 │   │   ├── base.py                # Base scraper class
-│   │   ├── indeed.py              # Indeed scraper
-│   │   ├── linkedin.py            # LinkedIn scraper
-│   │   └── ziprecruiter.py        # ZipRecruiter scraper
+│   │   ├── linkedin.py            # LinkedIn scraper (Global)
+│   │   ├── builtin_nyc.py         # BuiltIn NYC scraper (US)
+│   │   ├── yc_jobs.py             # Y Combinator Jobs scraper (Global)
+│   │   └── seek.py                # Seek scraper (Australia/NZ)
 │   │
 │   ├── scoring/
 │   │   └── engine.py              # Intelligent matching algorithm

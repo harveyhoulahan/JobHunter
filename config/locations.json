@@ -33,5 +33,20 @@
     "name": "Remote",
     "country": "US",
     "enabled": true
+  },
+  {
+    "name": "Melbourne VIC",
+    "country": "AU",
+    "enabled": false
+  },
+  {
+    "name": "Sydney NSW",
+    "country": "AU",
+    "enabled": false
+  },
+  {
+    "name": "Brisbane QLD",
+    "country": "AU",
+    "enabled": false
   }
 ]

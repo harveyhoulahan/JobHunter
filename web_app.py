@@ -288,7 +288,10 @@ def get_locations():
                 {'name': 'Seattle, WA', 'country': 'US', 'enabled': True},
                 {'name': 'Austin, TX', 'country': 'US', 'enabled': True},
                 {'name': 'Boston, MA', 'country': 'US', 'enabled': True},
-                {'name': 'Remote', 'country': 'US', 'enabled': True}
+                {'name': 'Remote', 'country': 'US', 'enabled': True},
+                {'name': 'Melbourne VIC', 'country': 'AU', 'enabled': False},
+                {'name': 'Sydney NSW', 'country': 'AU', 'enabled': False},
+                {'name': 'Brisbane QLD', 'country': 'AU', 'enabled': False}
             ]
         
         return jsonify({'success': True, 'locations': locations})

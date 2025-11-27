@@ -50,7 +50,7 @@
         <section class="panel" style="margin-top: 32px;">
             <h2>Active Job Boards</h2>
             <p style="color: var(--muted); margin-bottom: 24px;">
-                Job boards are automatically activated based on your locations. US locations enable LinkedIn & BuiltIn, Australian locations will enable Seek (coming soon).
+                Job boards are automatically activated based on your locations. US locations enable LinkedIn & BuiltIn. Australian locations enable Seek.
             </p>
 
             <div class="job-boards-status">
@@ -69,9 +69,9 @@
                     <div class="status active">Active</div>
                     <p>Coverage: YC Startups (Global)</p>
                 </div>
-                <div class="board-card">
+                <div class="board-card" id="seekBoard">
                     <h3>🦘 Seek</h3>
-                    <div class="status inactive">Coming Soon</div>
+                    <div class="status" id="seekStatus">Inactive</div>
                     <p>Coverage: Australia & NZ</p>
                     <small style="color: var(--muted);">Auto-activates with AU locations</small>
                 </div>
@@ -95,7 +95,10 @@
             {name: 'Seattle, WA', country: 'US', enabled: true},
             {name: 'Austin, TX', country: 'US', enabled: true},
             {name: 'Boston, MA', country: 'US', enabled: true},
-            {name: 'Remote', country: 'US', enabled: true}
+            {name: 'Remote', country: 'US', enabled: true},
+            {name: 'Melbourne VIC', country: 'AU', enabled: false},
+            {name: 'Sydney NSW', country: 'AU', enabled: false},
+            {name: 'Brisbane QLD', country: 'AU', enabled: false}
         ];
 
         function loadLocations() {
@@ -135,6 +138,23 @@
                     </div>
                 </div>
             `).join('');
+            
+            // Update job board status based on active locations
+            updateJobBoardStatus(locations);
+        }
+
+        function updateJobBoardStatus(locations) {
+            // Check if any AU locations are enabled
+            const hasAU = locations.some(loc => loc.country === 'AU' && loc.enabled);
+            
+            const seekStatus = document.getElementById('seekStatus');
+            if (hasAU) {
+                seekStatus.textContent = 'Active';
+                seekStatus.className = 'status active';
+            } else {
+                seekStatus.textContent = 'Inactive';
+                seekStatus.className = 'status inactive';
+            }
         }
 
         function getFlagEmoji(country) {
