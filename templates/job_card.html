@@ -52,7 +52,7 @@
            class="btn btn-primary btn-small apply-link"
            data-job-id="{{ job.id }}"
            data-company="{{ job.company }}">
-            <span>Apply on {{ job.source or 'site' }}</span>
+            <span>📝 Apply Myself</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                 <polyline points="15 3 21 3 21 9"></polyline>
@@ -61,6 +61,14 @@
         </a>
 
         {% if not job.applied_date %}
+        <button class="btn btn-success btn-small auto-submit-btn" 
+                data-job-id="{{ job.id }}" 
+                data-source-id="{{ job.source_id }}"
+                data-company="{{ job.company }}"
+                title="Automatically submit application using generated CV">
+            <span>⚡ Auto-Submit</span>
+        </button>
+        
         <button class="btn btn-surface btn-small mark-applied-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}">
             <span>✓ Mark applied</span>
         </button>

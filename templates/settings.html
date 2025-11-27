@@ -83,6 +83,83 @@
                 </div>
             </div>
         </section>
+
+        <section class="panel" style="margin-top: 32px;">
+            <h2>⚡ Auto-Submit Applications</h2>
+            <p style="color: var(--muted); margin-bottom: 24px;">
+                Automatically submit applications to supported platforms. JobHunter generates custom CVs and cover letters, then submits them for you.
+            </p>
+
+            <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                    <span style="font-size: 24px;">⚠️</span>
+                    <strong>Review Mode Recommended</strong>
+                </div>
+                <p style="color: var(--muted); margin: 0; font-size: 14px;">
+                    Keep "Review Mode" ON to manually approve each application before submission. This ensures quality and prevents spam.
+                </p>
+            </div>
+
+            <div style="display: flex; gap: 24px; margin-bottom: 32px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
+                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                        <input type="checkbox" id="autoSubmitEnabled" style="width: 20px; height: 20px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 16px;">Enable Auto-Submit</div>
+                            <div style="color: var(--muted); font-size: 13px;">Automatically submit to supported platforms</div>
+                        </div>
+                    </label>
+                </div>
+                <div style="flex: 1; min-width: 250px;">
+                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                        <input type="checkbox" id="reviewMode" checked style="width: 20px; height: 20px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 16px;">Review Mode</div>
+                            <div style="color: var(--muted); font-size: 13px;">Pause before final submit for approval</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <h3 style="margin-bottom: 16px;">Supported Platforms</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                <label class="platform-toggle">
+                    <input type="checkbox" id="autoSubmitGreenhouse" checked>
+                    <div class="platform-info">
+                        <div class="platform-name">🟢 Greenhouse</div>
+                        <div class="platform-coverage">Stripe, Airbnb, DoorDash</div>
+                    </div>
+                </label>
+                <label class="platform-toggle">
+                    <input type="checkbox" id="autoSubmitLever" checked>
+                    <div class="platform-info">
+                        <div class="platform-name">🟢 Lever</div>
+                        <div class="platform-coverage">Netflix, Uber, Spotify</div>
+                    </div>
+                </label>
+                <label class="platform-toggle">
+                    <input type="checkbox" id="autoSubmitEmail" checked>
+                    <div class="platform-info">
+                        <div class="platform-name">📧 Email</div>
+                        <div class="platform-coverage">Direct applications</div>
+                    </div>
+                </label>
+                <label class="platform-toggle">
+                    <input type="checkbox" id="autoSubmitWorkday">
+                    <div class="platform-info">
+                        <div class="platform-name">🟡 Workday</div>
+                        <div class="platform-coverage">Resume upload only</div>
+                    </div>
+                </label>
+            </div>
+
+            <div style="margin-top: 24px; padding: 16px; background: rgba(139, 92, 246, 0.1); border-radius: 12px;">
+                <strong>🚫 Not Supported:</strong>
+                <p style="color: var(--muted); margin: 8px 0 0 0; font-size: 14px;">
+                    LinkedIn Easy Apply is not supported (violates ToS, risks account ban). You'll receive custom cover letters for LinkedIn jobs to apply manually.
+                </p>
+            </div>
+        </section>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -223,8 +300,71 @@
             if (e.key === 'Enter') addLocation();
         });
 
+        // Auto-submit settings
+        function loadAutoSubmitSettings() {
+            const settings = localStorage.getItem('autoSubmitSettings');
+            return settings ? JSON.parse(settings) : {
+                enabled: false,
+                reviewMode: true,
+                platforms: {
+                    greenhouse: true,
+                    lever: true,
+                    email: true,
+                    workday: false
+                }
+            };
+        }
+
+        function saveAutoSubmitSettings(settings) {
+            localStorage.setItem('autoSubmitSettings', JSON.stringify(settings));
+            
+            // Sync to backend
+            fetch('/api/update_auto_submit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings)
+            }).catch(err => console.error('Failed to sync auto-submit settings:', err));
+        }
+
+        function initAutoSubmitSettings() {
+            const settings = loadAutoSubmitSettings();
+            
+            // Set checkboxes
+            document.getElementById('autoSubmitEnabled').checked = settings.enabled;
+            document.getElementById('reviewMode').checked = settings.reviewMode;
+            document.getElementById('autoSubmitGreenhouse').checked = settings.platforms.greenhouse;
+            document.getElementById('autoSubmitLever').checked = settings.platforms.lever;
+            document.getElementById('autoSubmitEmail').checked = settings.platforms.email;
+            document.getElementById('autoSubmitWorkday').checked = settings.platforms.workday;
+            
+            // Add change listeners
+            document.getElementById('autoSubmitEnabled').addEventListener('change', saveAutoSubmit);
+            document.getElementById('reviewMode').addEventListener('change', saveAutoSubmit);
+            document.getElementById('autoSubmitGreenhouse').addEventListener('change', saveAutoSubmit);
+            document.getElementById('autoSubmitLever').addEventListener('change', saveAutoSubmit);
+            document.getElementById('autoSubmitEmail').addEventListener('change', saveAutoSubmit);
+            document.getElementById('autoSubmitWorkday').addEventListener('change', saveAutoSubmit);
+        }
+
+        function saveAutoSubmit() {
+            const settings = {
+                enabled: document.getElementById('autoSubmitEnabled').checked,
+                reviewMode: document.getElementById('reviewMode').checked,
+                platforms: {
+                    greenhouse: document.getElementById('autoSubmitGreenhouse').checked,
+                    lever: document.getElementById('autoSubmitLever').checked,
+                    email: document.getElementById('autoSubmitEmail').checked,
+                    workday: document.getElementById('autoSubmitWorkday').checked
+                }
+            };
+            
+            saveAutoSubmitSettings(settings);
+            showToast('✓ Auto-submit settings updated');
+        }
+        
         // Initialize
         renderLocations();
+        initAutoSubmitSettings();
     </script>
 
     <style>
@@ -344,6 +484,44 @@
         .status.inactive {
             background: rgba(148, 163, 184, 0.1);
             color: var(--muted);
+        }
+
+        .platform-toggle {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .platform-toggle:hover {
+            border-color: rgba(139, 92, 246, 0.5);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .platform-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .platform-info {
+            flex: 1;
+        }
+
+        .platform-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .platform-coverage {
+            color: var(--muted);
+            font-size: 12px;
         }
     </style>
 </body>

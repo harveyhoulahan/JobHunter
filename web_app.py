@@ -300,6 +300,214 @@ def get_locations():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/update_auto_submit', methods=['POST'])
+def update_auto_submit():
+    """Update auto-submit settings"""
+    try:
+        data = request.get_json(silent=True) or {}
+        
+        # Store settings in config file
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'auto_submit.json')
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        
+        with open(config_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        logger.info(f"Auto-submit settings updated: {data}")
+        return jsonify({'success': True, 'message': 'Auto-submit settings updated'})
+    except Exception as e:
+        logger.error(f"Error updating auto-submit settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/get_auto_submit', methods=['GET'])
+def get_auto_submit():
+    """Get current auto-submit settings"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'auto_submit.json')
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                settings = json.load(f)
+        else:
+            # Return default settings
+            settings = {
+                'enabled': False,
+                'reviewMode': True,
+                'platforms': {
+                    'greenhouse': True,
+                    'lever': True,
+                    'email': True,
+                    'workday': False
+                }
+            }
+        
+        return jsonify({'success': True, 'settings': settings})
+    except Exception as e:
+        logger.error(f"Error getting auto-submit settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auto_submit_job', methods=['GET', 'POST'])
+def auto_submit_job():
+    """
+    Trigger auto-submit for a specific job application
+    Can be called from email link or dashboard button
+    """
+    try:
+        # Get app_id from query params or POST body
+        if request.method == 'GET':
+            app_id = request.args.get('app_id')
+        else:
+            data = request.get_json(silent=True) or {}
+            app_id = data.get('app_id')
+        
+        if not app_id:
+            return jsonify({'success': False, 'error': 'app_id required'}), 400
+        
+        # Find the application metadata
+        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
+        metadata_file = os.path.join(applications_dir, f"{app_id}_metadata.json")
+        
+        if not os.path.exists(metadata_file):
+            return jsonify({'success': False, 'error': 'Application not found'}), 404
+        
+        # Load application data
+        with open(metadata_file, 'r') as f:
+            app_data = json.load(f)
+        
+        # Find CV and cover letter files
+        cv_file = os.path.join(applications_dir, f"{app_id}_resume.pdf")
+        cover_letter_file = os.path.join(applications_dir, f"{app_id}_cover_letter.txt")
+        
+        if not os.path.exists(cv_file):
+            return jsonify({'success': False, 'error': 'CV file not found'}), 404
+        
+        # Import auto-submit module
+        from src.applying.auto_submit import AutoSubmitManager
+        
+        # Get auto-submit settings
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'auto_submit.json')
+        review_mode = True  # Default to review mode for safety
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                settings = json.load(f)
+                review_mode = settings.get('reviewMode', True)
+        
+        # Initialize auto-submitter
+        submitter = AutoSubmitManager(review_mode=review_mode)
+        
+        # Submit application
+        job_data = app_data.get('job', {})
+        result = submitter.submit_application(
+            job_data,
+            cv_file,
+            cover_letter_file if os.path.exists(cover_letter_file) else None
+        )
+        
+        # If successful, mark as applied in database
+        if result.get('success'):
+            job_id = app_data.get('job', {}).get('id')
+            if job_id:
+                db.mark_applied(
+                    job_id=job_id,
+                    cv_version=os.path.basename(cv_file),
+                    application_method=result.get('method', 'auto_submit'),
+                    notes=f"Auto-submitted via {result.get('method')} on {datetime.now().strftime('%Y-%m-%d')}"
+                )
+        
+        # Return result (for GET requests, show HTML page; for POST, return JSON)
+        if request.method == 'GET':
+            # Return HTML page with result
+            status = result.get('status', 'unknown')
+            method = result.get('method', 'unknown')
+            
+            if status == 'submitted':
+                message = f"✅ Application successfully submitted via {method}!"
+                color = "#10b981"
+            elif status == 'ready_for_review':
+                message = f"⚠️ Application filled out and ready for your review via {method}"
+                color = "#f59e0b"
+            else:
+                message = f"❌ Auto-submit failed: {result.get('error', 'Unknown error')}"
+                color = "#ef4444"
+            
+            html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto-Submit Result</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #f3f4f6;
+        }}
+        .container {{
+            background: white;
+            padding: 48px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 500px;
+            text-align: center;
+        }}
+        .icon {{
+            font-size: 64px;
+            margin-bottom: 24px;
+        }}
+        .message {{
+            font-size: 20px;
+            font-weight: 600;
+            color: {color};
+            margin-bottom: 24px;
+        }}
+        .details {{
+            color: #6b7280;
+            margin-bottom: 32px;
+        }}
+        .btn {{
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-block;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">{'✅' if status == 'submitted' else '⚠️' if status == 'ready_for_review' else '❌'}</div>
+        <div class="message">{message}</div>
+        <div class="details">
+            <strong>Job:</strong> {job_data.get('title', 'Unknown')}<br>
+            <strong>Company:</strong> {job_data.get('company', 'Unknown')}<br>
+            <strong>Method:</strong> {method}<br>
+            <strong>CV:</strong> {os.path.basename(cv_file)}
+        </div>
+        <a href="http://localhost:5002" class="btn">← Back to Dashboard</a>
+    </div>
+</body>
+</html>
+            """
+            return html
+        else:
+            return jsonify(result)
+            
+    except Exception as e:
+        logger.error(f"Error in auto_submit_job: {e}")
+        if request.method == 'GET':
+            return f"<h1>Error</h1><p>{str(e)}</p>", 500
+        else:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def _start_scrape_job():
     """Kick off a background scrape run if none is running"""
     global scrape_running

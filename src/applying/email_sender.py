@@ -128,6 +128,11 @@ class ApplicationEmailer:
                 badge_color = '#6b7280'  # gray
             
             job_url = job.get('url', '#')
+            app_id = app.get('id', '')
+            
+            # Get dashboard URL from environment or use localhost
+            dashboard_url = os.getenv('DASHBOARD_URL', 'http://localhost:5002')
+            auto_submit_url = f"{dashboard_url}/api/auto_submit_job?app_id={app_id}"
             
             job_rows.append(f"""
                 <tr style="border-bottom: 1px solid #e5e7eb;">
@@ -141,6 +146,9 @@ class ApplicationEmailer:
                         <div style="color: #6b7280; font-size: 14px;">
                             {job.get('company', 'Unknown')} • {job.get('location', 'Remote')}
                         </div>
+                        <div style="color: #9ca3af; font-size: 12px; margin-top: 4px;">
+                            Source: {job.get('source', 'unknown')}
+                        </div>
                     </td>
                     <td style="padding: 12px 8px; text-align: center;">
                         <span style="background: {badge_color}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 14px;">
@@ -148,11 +156,18 @@ class ApplicationEmailer:
                         </span>
                     </td>
                     <td style="padding: 12px 8px; text-align: center;">
-                        <a href="{job_url}" 
-                           style="background: #2563eb; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; display: inline-block;"
-                           onclick="navigator.clipboard.writeText('{app.get('id', '')}'); return true;">
-                            Apply Now →
-                        </a>
+                        <div style="display: flex; gap: 8px; flex-direction: column;">
+                            <a href="{job_url}" 
+                               style="background: #2563eb; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; display: inline-block; font-size: 13px;"
+                               target="_blank">
+                                📝 Apply Myself
+                            </a>
+                            <a href="{auto_submit_url}" 
+                               style="background: #10b981; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; display: inline-block; font-size: 13px;"
+                               target="_blank">
+                                ⚡ Auto-Submit
+                            </a>
+                        </div>
                     </td>
                 </tr>
             """)

@@ -518,15 +518,55 @@
                 if (data.success) {
                     showToast('Scrape started. Refresh in ~30s.');
                 } else {
-                    showToast(data.error || 'Scrape already running');
+                    showToast('Scrape already running');
                 }
-            } catch (e) {
+            } catch (err) {
                 showToast('Error starting scrape');
             } finally {
                 runScrapeBtn.disabled = false;
-                runScrapeBtn.textContent = 'Run scrape now';
+                runScrapeBtn.textContent = 'Run Scrape Now';
             }
         }
+
+        // Auto-submit job
+        async function autoSubmitJob(jobId, sourceId, company) {
+            if (!confirm(`Auto-submit application to ${company}?\n\nThis will:\n1. Find your generated CV for this job\n2. Auto-fill the application form\n3. Pause before final submit for your review`)) {
+                return;
+            }
+
+            showToast('🚀 Starting auto-submit...');
+
+            try {
+                const res = await fetch('/api/auto_submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ job_id: jobId })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    if (data.status === 'submitted') {
+                        showToast(`✅ Application submitted to ${company}!`);
+                        // Mark as applied automatically
+                        setTimeout(() => {
+                            markApplied(jobId, company);
+                        }, 1000);
+                    } else if (data.status === 'ready_for_review') {
+                        showToast(`✓ Application filled! Review and submit manually.`);
+                    } else {
+                        showToast(`⚠ ${data.message || 'Manual application required'}`);
+                    }
+                } else {
+                    showToast(`❌ Auto-submit failed: ${data.error || 'Unknown error'}`);
+                }
+            } catch (err) {
+                console.error('Auto-submit error:', err);
+                showToast('❌ Error during auto-submit');
+            }
+        }
+
+        // Run scrape initialization
         if (runScrapeBtn) {
             runScrapeBtn.addEventListener('click', triggerScrape);
         }
@@ -608,6 +648,14 @@
                 updateStatus(jobId);
             }
             
+            if (e.target.closest('.auto-submit-btn')) {
+                const btn = e.target.closest('.auto-submit-btn');
+                const jobId = parseInt(btn.dataset.jobId);
+                const sourceId = btn.dataset.sourceId;
+                const company = btn.dataset.company;
+                autoSubmitJob(jobId, sourceId, company);
+            }
+            
             if (e.target.closest('.view-cover-letter-btn')) {
                 const btn = e.target.closest('.view-cover-letter-btn');
                 const jobId = parseInt(btn.dataset.jobId);
@@ -642,6 +690,32 @@
             }, 300);
             
             showToast('✓ Job hidden');
+        }
+
+        // Auto-submit job application
+        async function autoSubmitJob(jobId, sourceId, company) {
+            if (!confirm(`Auto-submit application to ${company}?\n\nThis will:\n• Use your generated CV\n• Fill out the application form\n• Submit automatically (or pause for review based on your settings)`)) {
+                return;
+            }
+            
+            showToast('⚡ Starting auto-submit...');
+            
+            try {
+                // Find the application ID (format: app_TIMESTAMP_SOURCEID_*)
+                const appId = `app_${new Date().toISOString().split('T')[0].replace(/-/g, '')}_${sourceId}`;
+                
+                // Open the auto-submit endpoint in new tab
+                window.open(`/api/auto_submit_job?app_id=${appId}`, '_blank');
+                
+                // Mark as applied after a delay
+                setTimeout(() => {
+                    showToast('✓ Auto-submit initiated - check the new tab');
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Auto-submit error:', error);
+                showToast('❌ Auto-submit failed: ' + error.message);
+            }
         }
 
         // Hide already-hidden jobs on page load
