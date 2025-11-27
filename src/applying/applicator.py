@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from profile import HARVEY_PROFILE
 from .cv_generator import CVGenerator
+from .gpt4_cover_letter import GPT4CoverLetterGenerator
 
 
 class JobApplicator:
@@ -193,7 +194,28 @@ class JobApplicator:
         job_data: Dict[str, Any],
         score_result: Dict[str, Any]
     ) -> str:
-        """Generate a customized cover letter in Harvey's natural writing style"""
+        """Generate a customized cover letter using GPT-4 (with template fallback)"""
+        
+        # Try GPT-4 generation first
+        try:
+            gpt4_generator = GPT4CoverLetterGenerator()
+            cover_letter = gpt4_generator.generate_cover_letter(
+                job_data=job_data,
+                score_data=score_result
+            )
+            logger.info(f"✨ Generated GPT-4 cover letter for {job_data.get('company', 'Unknown')}")
+            return cover_letter
+        except Exception as e:
+            logger.warning(f"GPT-4 generation failed ({str(e)}), using template fallback")
+            # Fall back to template-based generation
+            return self._generate_template_cover_letter(job_data, score_result)
+    
+    def _generate_template_cover_letter(
+        self,
+        job_data: Dict[str, Any],
+        score_result: Dict[str, Any]
+    ) -> str:
+        """Generate a customized cover letter using template (fallback method)"""
         from datetime import datetime
         
         job_title = job_data.get('title', 'the position')
