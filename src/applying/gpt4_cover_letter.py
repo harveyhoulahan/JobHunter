@@ -72,11 +72,11 @@ class GPT4CoverLetterGenerator:
                         "content": prompt
                     }
                 ],
-                temperature=0.8,  # Creative but focused
-                max_tokens=1000,  # ~700 word cover letter
-                top_p=0.95,
-                frequency_penalty=0.3,  # Reduce repetition
-                presence_penalty=0.4    # Encourage diverse language
+                temperature=0.6,  # More controlled, less flowery
+                max_tokens=500,   # Shorter letters (~350 words max)
+                top_p=0.85,
+                frequency_penalty=0.6,  # Strong penalty against AI clichés
+                presence_penalty=0.2
             )
             
             cover_letter = response.choices[0].message.content.strip()
@@ -91,36 +91,40 @@ class GPT4CoverLetterGenerator:
     
     def _get_system_prompt(self) -> str:
         """System prompt that defines GPT-4's role and style"""
-        return """You write cover letters for a senior software engineer who knows his worth but doesn't need to prove it.
+        return """You write cover letters for a senior software engineer. The goal is concise, professional, and human.
 
-The vibe:
-- Cool, calm, collected. You're not desperate, you're selective.
-- Written like a human, not a corporate drone or AI bot
-- No buzzwords, no fluff, no "passionate about technology" garbage
-- Confident but never arrogant. You've done the work, the results speak.
-- Natural language. Like you're explaining why this role makes sense over coffee.
+Key principles:
+- Get to the point. No fluff, no preamble.
+- Write like a professional who's done the work, not trying to impress.
+- Specific examples with numbers. "Built X that did Y" not "passionate about building."
+- Natural language. How you'd explain it to another engineer, not HR.
+- Short. 250-350 words max. 3 paragraphs.
 
-What makes a good letter:
-- Gets to the point. No rambling intros.
-- Shows don't tell. Built X that did Y for Z company. Numbers matter.
-- Makes it clear why THIS role at THIS company, not just any job
-- Reads like Harvey actually wrote it, not a template generator
-- 3 tight paragraphs, maybe 4. Under 400 words.
+What makes it good:
+- Opens with why you're interested in THIS role at THIS company
+- Middle paragraph: relevant work you've done with concrete details
+- Close: why it's a fit, no begging
 
 What to avoid:
-- Corporate speak ("synergize", "leverage", "passionate")
-- Begging energy ("I would be honored", "I hope to hear from you")
-- Generic praise ("your company is amazing!")
-- Fake enthusiasm with exclamation marks
-- Robotic formatting or overly formal tone
-- Any clichés about being a "team player" or "fast learner"
+- AI tells: "delve", "landscape", "leverage", "harness", "realm", "revolutionize"
+- Flowery language: "eager to explore", "kindred spirit", "audacity"  
+- Overly casual: "Hey there", "jumping in", "let's make it happen"
+- Marketing speak: "cutting-edge", "innovative", "game-changing"
+- Unnecessary adjectives and adverbs
+- Opening questions or dramatic statements
+- Any phrase that sounds like ChatGPT
+
+Tone:
+- Professional but direct
+- Confident from competence, not hype
+- Conversational without being casual
+- Technical enough to show you know what you're talking about
 
 Format:
-- Skip the address header and date stuff. Just start.
-- Open with why you're interested, straight up.
-- Middle paragraph: what you've built that's relevant
-- Close: why it's a good fit, both ways
-- Sign off: "Best, Harvey Houlahan" (no "regards" or "sincerely")
+- No address header or date
+- Start with a clear opening sentence
+- 3 paragraphs total
+- Sign off: "Best, Harvey Houlahan"
 """
     
     def _build_prompt(
@@ -143,18 +147,20 @@ Format:
         company_research = score_data.get('company_research', {})
         
         # Build Harvey's profile summary
+        edu = HARVEY_PROFILE['education'][0]  # First education entry
         profile_summary = f"""
 CANDIDATE: Harvey Houlahan
-EDUCATION: {HARVEY_PROFILE['education']['degree']} from {HARVEY_PROFILE['education']['university']}
+EDUCATION: {edu['degree']} from {edu['institution']}
+LOCATION: {HARVEY_PROFILE['location']}
 
-KEY EXPERIENCE:
-{self._format_experience()}
+BACKGROUND:
+{HARVEY_PROFILE['summary']}
 
-TECHNICAL SKILLS:
-{self._format_skills()}
-
-ACHIEVEMENTS:
-{self._format_achievements()}
+CORE TECHNICAL SKILLS:
+- AI/ML: {', '.join(HARVEY_PROFILE['skills']['ai_ml'][:8])}
+- Backend: {', '.join(HARVEY_PROFILE['skills']['backend'][:8])}
+- Full-stack: {', '.join(HARVEY_PROFILE['skills']['fullstack'][:6])}
+- Cloud & Data: {', '.join(HARVEY_PROFILE['skills']['cloud'][:4])}, {', '.join(HARVEY_PROFILE['skills']['data'][:4])}
 """
         
         # Build company insights if available
@@ -173,58 +179,32 @@ Technical Alignment: {', '.join(tech_matches[:5]) if tech_matches else 'General 
 Role Alignment: {', '.join(role_matches[:3]) if role_matches else 'Software engineering'}
 """
         
-        prompt = f"""Write a compelling cover letter for this job application:
+        prompt = f"""Write a cover letter for this job:
 
 ROLE: {title}
 COMPANY: {company}
 {company_insights}
 
-JOB DESCRIPTION:
-{description}
+JOB DESCRIPTION (truncated):
+{description[:2000]}
 
 {profile_summary}
 
 {match_analysis}
 
-INSTRUCTIONS:
-1. Open with a strong hook that connects Harvey's unique background to {company}'s mission or this specific role
-2. In 2-3 paragraphs, weave together:
-   - Specific examples from Harvey's FibreTrace ML work (supply chain ML, production systems, PyTorch)
-   - Relevant iOS/mobile experience from Friday Technologies if applicable
-   - Technical depth that shows he can handle the role's challenges
-   - Metrics and impact where possible (e.g., "deployed models processing 100K+ daily transactions")
-3. Show genuine interest in {company} specifically (use company research insights if provided)
-4. Address visa situation naturally if relevant (E-3 visa eligible, similar to H1B but faster)
-5. Close with enthusiasm and clear call to action
+EXAMPLE OF GOOD WRITING:
+"I want to work at {company} on {title} because you're building AI systems for IT management. I've built similar ML systems at scale.
 
-TONE: {tone}
-LENGTH: 300-400 words (3-4 paragraphs)
-STYLE: Confident, specific, metric-driven, genuinely enthusiastic
+At FibreTrace, I built an analytics platform that processes 1M+ data points daily from cotton supply chains. The system uses PyTorch for real-time tracking and predictive models, serving clients like Target and Cargill. At Friday Technologies, I developed iOS apps with Core ML integration for Apple-recognized products.
 
-Write the cover letter now:"""
+My experience with production ML systems, NLP, and LLMs fits what you need for this role."
+
+BANNED WORDS - REWRITE IF YOU USE THESE:
+"drawn", "aligns", "resonates", "honed", "spearheaded", "robust", "pivotal", "leveraging", "transforming", "excited", "passionate", "unique", "shaping", "redefining", "innovative", "cutting-edge", "matches", "ambitions"
+
+Write like the example above. Direct, specific, no fluff:"""
         
         return prompt
-    
-    def _format_experience(self) -> str:
-        """Format Harvey's work experience for context"""
-        exp_parts = []
-        for job in HARVEY_PROFILE['experience']:
-            exp_parts.append(
-                f"- {job['title']} at {job['company']} ({job['period']}): "
-                f"{', '.join(job['highlights'][:2])}"
-            )
-        return "\n".join(exp_parts)
-    
-    def _format_skills(self) -> str:
-        """Format technical skills"""
-        skills = []
-        for category, items in HARVEY_PROFILE['skills'].items():
-            skills.append(f"{category.title()}: {', '.join(items[:5])}")
-        return "\n".join(skills)
-    
-    def _format_achievements(self) -> str:
-        """Format key achievements"""
-        return "\n".join(f"- {ach}" for ach in HARVEY_PROFILE['achievements'][:4])
     
     def _generate_fallback(self, job_data: Dict[str, Any], score_data: Dict[str, Any]) -> str:
         """Fallback template if GPT-4 fails"""

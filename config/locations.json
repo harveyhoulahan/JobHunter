@@ -1,0 +1,37 @@
+[
+  {
+    "name": "New York, NY",
+    "country": "US",
+    "enabled": true
+  },
+  {
+    "name": "Los Angeles, CA",
+    "country": "US",
+    "enabled": true
+  },
+  {
+    "name": "San Francisco, CA",
+    "country": "US",
+    "enabled": true
+  },
+  {
+    "name": "Seattle, WA",
+    "country": "US",
+    "enabled": true
+  },
+  {
+    "name": "Austin, TX",
+    "country": "US",
+    "enabled": true
+  },
+  {
+    "name": "Boston, MA",
+    "country": "US",
+    "enabled": true
+  },
+  {
+    "name": "Remote",
+    "country": "US",
+    "enabled": true
+  }
+]
