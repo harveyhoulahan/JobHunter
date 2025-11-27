@@ -50,6 +50,7 @@ pytest-mock>=3.12.0
 # CV Generation (Auto-applying)
 pypdf>=4.0.0
 reportlab>=4.0.0
+openai>=1.0.0  # GPT-4 for elite cover letters
 
 # Web Dashboard
 flask>=3.0.0

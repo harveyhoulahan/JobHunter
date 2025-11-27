@@ -1,0 +1,15 @@
+# Render.com deployment configuration
+services:
+  - type: web
+    name: jobhunter-dashboard
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: 5002
+      - key: PYTHON_VERSION
+        value: 3.11
+    healthCheckPath: /
+    autoDeploy: true
+    branch: main

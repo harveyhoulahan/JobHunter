@@ -203,7 +203,7 @@ class JobApplicator:
                 job_data=job_data,
                 score_data=score_result
             )
-            logger.info(f"✨ Generated GPT-4 cover letter for {job_data.get('company', 'Unknown')}")
+            logger.info(f"Generated GPT-4 cover letter for {job_data.get('company', 'Unknown')}")
             return cover_letter
         except Exception as e:
             logger.warning(f"GPT-4 generation failed ({str(e)}), using template fallback")
