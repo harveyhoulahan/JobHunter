@@ -20,6 +20,7 @@ from src.scoring.engine import JobScorer
 from src.scrapers.linkedin import LinkedInScraper
 from src.scrapers.builtin import BuiltInNYCScraper
 from src.scrapers.yc_jobs import YCJobsScraper
+from src.scrapers.seek import SeekScraper
 from src.alerts.notifications import AlertManager
 from src.applying.applicator import JobApplicator
 from src.config_loader import load_scraping_locations, get_active_countries, should_activate_job_board
@@ -40,12 +41,17 @@ class JobHunter:
         self.alert_manager = AlertManager(db=self.db)
         self.applicator = JobApplicator()  # Auto-apply for high-scoring jobs
         
-        # Initialize scrapers - LinkedIn, BuiltInNYC, and YC Jobs
+        # Initialize scrapers - LinkedIn, BuiltInNYC, YC Jobs, and Seek (AU)
         self.scrapers = {
             'linkedin': LinkedInScraper(),       # ~432 jobs per run
             'builtin': BuiltInNYCScraper(),      # ~150 jobs per run
             'yc_jobs': YCJobsScraper(),          # ~100-200 startup jobs
         }
+        
+        # Add Seek scraper if Australian locations are active
+        if should_activate_job_board('seek'):
+            self.scrapers['seek'] = SeekScraper()  # Australian jobs
+            logger.info("Seek scraper activated for Australian locations")
         
         # Configuration
         self.config = config or self._default_config()
@@ -144,6 +150,23 @@ class JobHunter:
                     'backend engineer',
                     'full stack engineer',
                     'python engineer'
+                ],
+                'seek': [
+                    # Seek (Australia) - ML/AI roles
+                    'Machine Learning Engineer',
+                    'ML Engineer',
+                    'AI Engineer',
+                    'Applied Scientist',
+                    
+                    # Backend/Software roles
+                    'Software Engineer',
+                    'Python Developer',
+                    'Backend Engineer',
+                    'Backend Developer',
+                    
+                    # Data roles
+                    'Data Engineer',
+                    'Analytics Engineer'
                 ]
             },
             'locations': load_scraping_locations(),  # Load from config file
