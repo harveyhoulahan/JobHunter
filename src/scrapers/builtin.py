@@ -7,6 +7,7 @@ from loguru import logger
 from .base import BaseScraper, JobListing
 import urllib.parse
 import time
+import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -167,7 +168,7 @@ class BuiltInNYCScraper(BaseScraper):
                 title = "Unknown Title"
             
             # Find company - look in parent elements
-            company = "Unknown Company"
+            company = ""
             parent = link.parent
             
             # Look for company link in the same container
@@ -176,12 +177,32 @@ class BuiltInNYCScraper(BaseScraper):
                     break
                 company_link = parent.find('a', href=lambda x: x and '/company/' in x)
                 if company_link:
-                    company = company_link.get_text(strip=True)
+                    # Try to get company name from h2 tag inside the link
+                    h2_tag = company_link.find('h2')
+                    if h2_tag:
+                        company = h2_tag.get_text(strip=True)
+                    else:
+                        company = company_link.get_text(strip=True)
                     break
                 parent = parent.parent
             
+            # If company still not found, extract from job page metadata
+            if not company:
+                company = self._extract_company_from_job_page(url)
+            
+            # If still empty, use Unknown Company
+            if not company:
+                company = "Unknown Company"
+                logger.warning(f"Could not extract company for job: {title}")
+            
             # Extract job ID from URL
             job_id = url.split('/')[-1]
+            
+            # Try to extract actual application URL (Greenhouse/Lever)
+            application_url = self._extract_application_url(url)
+            if application_url:
+                logger.info(f"Found Greenhouse/Lever URL for '{title}' at {company}")
+                url = application_url  # Use the real application URL instead
             
             # Don't fetch description yet - we'll do it later for new jobs only
             # This saves tons of time by not fetching descriptions for duplicates
@@ -200,6 +221,81 @@ class BuiltInNYCScraper(BaseScraper):
         except Exception as e:
             logger.debug(f"Error parsing job element: {e}")
             return None
+    
+    def _extract_company_from_job_page(self, job_url: str) -> str:
+        """
+        Extract company name from job detail page
+        Used as fallback when company can't be found in search results
+        """
+        try:
+            response = requests.get(job_url, headers=self.get_headers(), timeout=10)
+            if response.status_code != 200:
+                return ""
+            
+            soup = BeautifulSoup(response.content, 'lxml')
+            
+            # Method 1: Look for company link with h2 tag
+            company_link = soup.find('a', href=lambda x: x and '/company/' in str(x))
+            if company_link:
+                h2_tag = company_link.find('h2')
+                if h2_tag:
+                    return h2_tag.get_text(strip=True)
+                return company_link.get_text(strip=True)
+            
+            # Method 2: Extract from page title (e.g., "Job Title - Company | Built In")
+            title_tag = soup.find('title')
+            if title_tag:
+                title_text = title_tag.get_text()
+                if ' - ' in title_text and ' |' in title_text:
+                    # Format: "Job Title - Company | Built In"
+                    company = title_text.split(' - ')[1].split(' |')[0].strip()
+                    return company
+            
+            return ""
+        except Exception as e:
+            logger.debug(f"Error extracting company from job page: {e}")
+            return ""
+    
+    def _extract_application_url(self, builtin_url: str) -> str:
+        """
+        Extract actual Greenhouse/Lever URL from BuiltIn job page
+        Returns the application URL if found, otherwise empty string
+        """
+        try:
+            import re
+            response = requests.get(builtin_url, headers=self.get_headers(), timeout=10)
+            
+            if response.status_code != 200:
+                return ""
+            
+            soup = BeautifulSoup(response.content, 'lxml')
+            
+            # Method 1: Look for greenhouse/lever URLs in links
+            all_links = soup.find_all('a', href=True)
+            for link in all_links:
+                href = str(link.get('href', ''))
+                if 'greenhouse' in href.lower():
+                    return href
+                elif 'lever' in href.lower():
+                    return href
+            
+            # Method 2: Look in script tags
+            scripts = soup.find_all('script')
+            for script in scripts:
+                if script.string:
+                    greenhouse_match = re.search(r'(https?://[^"\']*greenhouse[^"\']*)', script.string)
+                    if greenhouse_match:
+                        return greenhouse_match.group(1)
+                    
+                    lever_match = re.search(r'(https?://[^"\']*lever\.co[^"\']*)', script.string)
+                    if lever_match:
+                        return lever_match.group(1)
+            
+            return ""
+            
+        except Exception as e:
+            logger.debug(f"Error extracting application URL: {e}")
+            return ""
     
     def fetch_single_job_description(self, job_url: str) -> str:
         """

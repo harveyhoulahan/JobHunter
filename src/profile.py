@@ -13,12 +13,13 @@ HARVEY_PROFILE = {
     "citizenship": ["Australian Citizen", "USA"],
     
     # Professional Summary
-    "summary": """Australian engineer pioneering traceability tech trusted by Target and Cargill. At FibreTrace, 
-    my frontline industry knowledge shapes luminescent-pigment solutions tracking cotton supply chains, blending 
-    real-time provenance with AI-powered analytics. Also employed by Friday Technologies, an Apple-recognized 
-    consultancy, crafting iOS, visionOS, and macOS innovations with Core ML and generative models. This fusion 
-    of rural roots and computer engineering expertise equips me to connect real-world challenges with tech that 
-    delivers transparency and impact at scale.""",
+    "summary": """New graduate (Nov 2025) with substantial production ML and backend engineering experience. 
+    At FibreTrace, built ML pipelines processing IoT sensor data for supply chain traceability (trusted by Target 
+    and Cargill), combining real-time data processing with predictive analytics. At Friday Technologies (Apple-recognized 
+    consultancy), developed iOS/visionOS applications integrating CoreML and generative AI. Strong technical foundation 
+    across Python, AWS, ML frameworks (PyTorch, TensorFlow), backend systems, and full-stack development. Proven ability 
+    to ship production systems and work across the stack - from embedded sensors to cloud ML pipelines. Rural Australian 
+    background drives passion for applying AI/ML to solve real-world problems in healthcare, agriculture, and sustainability.""",
     
     # Education
     "education": [
@@ -69,9 +70,13 @@ HARVEY_PROFILE = {
             "AWS", "Lambda", "S3", "EC2", "API Gateway",
             "Serverless", "High-throughput systems",
             "REST API", "GraphQL", "API Design",
+            "APIs", "API", "Backend", "Server-side",  # General terms jobs use
             "Microservices", "ETL/ELT Pipelines",
             "Real-time Data Processing", "Distributed Systems",
-            "Data Modeling", "Snowflake"
+            "Data Modeling", "Snowflake",
+            "Database", "Databases",  # General DB terms
+            "System Design", "Scalability", "Platform",  # Architecture terms
+            "Infrastructure", "Production Systems"  # Engineering terms
         ],
         
         # Full-stack development - ACTUAL SKILLS
@@ -168,22 +173,32 @@ HARVEY_PROFILE = {
         "remote_keywords": ["Remote", "Remote-friendly", "Remote OK", "Work from home", "WFH"]
     },
     
-    # Seniority level (Harvey has 3-4 years experience - Mid-level)
+    # Seniority level (Harvey is a NEW GRAD graduating Nov 2025, BUT with substantial internship experience)
+    # - FibreTrace: ML pipelines, production systems, IoT sensor data
+    # - Friday Technologies: iOS/visionOS development, CoreML, Apple-recognized work
+    # - Multiple AI/ML projects: RAG systems, predictive analytics, NLP
     "seniority": {
-        "years_experience": "3-4",  # Harvey's actual experience
+        "years_experience": "0-2",  # New grad but with ~2 years internship + project experience
         "target": [
-            # Ideal levels for Harvey (3-4 years)
-            "Mid", "Mid-level", "Mid Level", "Intermediate", 
-            "Software Engineer II", "Engineer II", "SWE II", "ML Engineer II",
-            "Associate", "Associate Engineer",
-            # Also acceptable
-            "Junior", "Junior Engineer", "Junior Developer",  # Can mentor/lead
-            "Software Engineer", "Engineer", "Developer",  # Generic titles
-            # Experience requirements that match
-            "2-5 years", "3+ years", "3-5 years", "2-4 years", "1-4 years"
+            # IDEAL: New grad / entry-level roles
+            "New Grad", "New Graduate", "Recent Graduate", "University Graduate", "2025 Grad", "2026 Grad",
+            "Entry Level", "Entry-Level", "Junior",
+            "Associate", "Associate Engineer", "Associate Software Engineer",
+            "Junior Engineer", "Junior Developer", "Junior Software Engineer",
+            "Software Engineer I", "Engineer I", "SWE I", "ML Engineer I",
+            "Graduate", "Graduate Engineer", "Graduate Developer",
+            # Generic titles (can be entry or mid-level)
+            "Software Engineer", "Engineer", "Developer", "ML Engineer", "Data Engineer",
+            "Backend Engineer", "AI Engineer", "MLOps Engineer", "Data Scientist",
+            # ALSO QUALIFIED FOR: Early career roles (Harvey's experience justifies these)
+            "Software Engineer II", "Engineer II", "Mid-level", "Intermediate",
+            # Experience requirements Harvey can meet
+            "0-2 years", "0-3 years", "1-2 years", "1-3 years", "2-3 years", "2+ years",
+            "recent graduate", "bachelor's degree", "bs degree", "computer science degree",
+            "new grad with internship", "internship experience"
         ],
         "exclude": [
-            # Too senior for 3-4 years experience
+            # Too senior even with Harvey's experience
             "Senior", "Sr.", "Sr ", "Staff", "Principal", "Distinguished",
             "Lead", "Tech Lead", "Team Lead", "Engineering Lead",
             "Director", "VP", "CTO", "Head of", "Chief",

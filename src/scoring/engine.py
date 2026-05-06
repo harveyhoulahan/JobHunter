@@ -25,23 +25,23 @@ except ImportError:
 class JobScorer:
     """
     Scores job listings on a 0-100 scale based on:
-    - AI Semantic Match (50%) - OPTIMIZED! Trust AI understanding more
-    - Technical stack match (20%)
-    - Industry match (12%)
-    - Role match (10%)
-    - Eligibility match (5%)
-    - Visa friendliness (3%)
+    - AI Semantic Match (35%) - AI understanding with keyword validation
+    - Technical stack match (25%) - Concrete skills matching
+    - Industry match (15%) - Domain alignment (priority sectors boosted)
+    - Role match (12%) - Position type fit
+    - Eligibility match (10%) - Requirements met (boosted importance)
+    - Visa friendliness (3%) - E-3 availability
     """
     
     # Scoring weights (must sum to 100)
-    # Optimized to trust AI semantic matching over keyword matching
+    # Balanced approach: AI + concrete matching
     WEIGHTS = {
-        'ai_semantic': 50,  # UP from 40 - AI understands context better
-        'technical': 20,    # DOWN from 25 - AI captures this
-        'industry': 12,     # DOWN from 15 - AI captures this
-        'role': 10,         # SAME - still important
-        'eligibility': 5,   # SAME - concrete requirements
-        'visa': 3           # DOWN from 5 - E-3 is easy, don't over-penalize
+        'ai_semantic': 35,  # DOWN from 50 - AI can be wrong, don't over-trust
+        'technical': 25,    # UP from 20 - Concrete skills are important
+        'industry': 15,     # UP from 12 - Harvey prioritizes certain sectors
+        'role': 12,         # UP from 10 - Role alignment matters
+        'eligibility': 10,  # UP from 5 - Meeting requirements is critical
+        'visa': 3           # SAME - E-3 is relatively easy
     }
     
     # Section headers that indicate eligibility requirements
@@ -126,7 +126,7 @@ class JobScorer:
         visa_score, visa_status, visa_keywords = self._score_visa(combined_text)
         
         # Apply weights (NEW: AI gets 40% weight!)
-        total_score = (
+        base_score = (
             (ai_score * weights.get('ai_semantic', 0) / 100) +
             (tech_score * weights.get('technical', 0) / 100) +
             (industry_score * weights.get('industry', 0) / 100) +
@@ -135,36 +135,54 @@ class JobScorer:
             (visa_score * weights.get('visa', 0) / 100)
         )
         
-        # Check location
-        location_ok, location_penalty, location_flag = self._assess_location(location)
-        total_score *= location_penalty
-        
-        # Check seniority
-        seniority_ok, seniority_flag, seniority_penalty = self._assess_seniority(title, description)
-        total_score *= seniority_penalty
-        
-        # 🔍 DEEP COMPANY RESEARCH FOR TOP MATCHES (75%+)
+        # 🔍 DEEP COMPANY RESEARCH FOR TOP MATCHES (65%+ base score, BEFORE penalties)
+        # Check base score before location/seniority penalties to catch great jobs anywhere!
         company_research = None
-        if total_score >= 75 and self.company_researcher:
-            logger.info(f"🎯 High match detected ({total_score:.1f}%) - researching {company}...")
+        if base_score >= 65 and self.company_researcher:
+            logger.info(f"🎯 High match detected ({base_score:.1f}%) - researching {company}...")
             try:
                 company_research = self.company_researcher.research_company(
                     company_name=company,
                     company_url=job_data.get('company_url')
                 )
                 
-                # Apply research-based score adjustment
+                # Apply research-based score adjustment to BASE score
                 if company_research.get('fit_score_adjustment'):
                     adjustment = company_research['fit_score_adjustment']
                     logger.info(f"  Adjusting score by {adjustment:+.1f}% based on company research")
-                    total_score = max(0, min(100, total_score + adjustment))
+                    base_score = max(0, min(100, base_score + adjustment))
             except Exception as e:
                 logger.warning(f"Company research failed for {company}: {e}")
         
-        # Generate reasoning
+        # NOW apply penalties to the (potentially research-boosted) base score
+        total_score = base_score
+        
+        # Check location (GREATLY reduced penalty for high-scoring jobs)
+        location_ok, location_penalty, location_flag = self._assess_location(location)
+        # For exceptional jobs (65%+), location matters less - worth relocating!
+        if not location_ok and total_score >= 65:
+            # Reduce penalty: only 5% reduction for great fits instead of 25%
+            location_penalty = 0.95
+            logger.info(f"  Reducing location penalty for high-scoring job ({total_score:.1f}%)")
+        total_score *= location_penalty
+        
+        # Check seniority
+        seniority_ok, seniority_flag, seniority_penalty = self._assess_seniority(title, description)
+        total_score *= seniority_penalty
+        
+        # Generate reasoning WITH BREAKDOWN SCORES
+        breakdown_scores = {
+            'ai_semantic': round(ai_score, 1),
+            'technical': round(tech_score, 1),
+            'industry': round(industry_score, 1),
+            'role': round(role_score, 1),
+            'eligibility': round(eligibility_score, 1),
+            'visa': round(visa_score, 1)
+        }
         reasoning = self._generate_reasoning(
             tech_matches, industry_matches, role_matches, eligibility_matches,
-            visa_status, location_ok, seniority_ok, total_score, ai_score, ai_details
+            visa_status, location_ok, seniority_ok, total_score, ai_score, ai_details,
+            breakdown_scores  # Pass the scores!
         )
         
         # Enhance reasoning with company research insights (for 75%+ matches)
@@ -294,6 +312,9 @@ class JobScorer:
         """
         Score role match (0-100)
         Weights description MORE than title to avoid misleading title-only matches
+        
+        Harvey is qualified for: ML Engineer, Data Scientist, Backend Engineer, AI Engineer,
+        Software Engineer, MLOps Engineer, Data Engineer, iOS Engineer, Full Stack
         """
         title_matches = []
         description_matches = []
@@ -320,15 +341,16 @@ class JobScorer:
             return 0.0, []
         
         # Score calculation - favor description matches
-        # Description match: full points
-        # Title-only match: reduced points
+        # Description match: strong signal of actual responsibilities
+        # Title-only match: weaker signal (could be mislabeled)
         base_score = 0
         if description_matches:
             # Description mentions = strong signal
-            base_score = 90 if len(description_matches) >= 2 else 80
+            # Multiple matches = even stronger (e.g., "ML Engineer" + "Data Scientist" work)
+            base_score = 95 if len(description_matches) >= 2 else 85
         elif title_matches:
-            # Title only = weaker signal
-            base_score = 60
+            # Title only = moderate signal
+            base_score = 70
         
         return base_score, all_matches
     
@@ -380,18 +402,48 @@ class JobScorer:
         """
         Score based on explicit eligibility criteria (0-100)
         Focuses on required years of experience and must-have skills
+        
+        Harvey's Experience Context:
+        - New grad (graduating Nov 2025) BUT with substantial internship experience
+        - FibreTrace: Production ML pipelines, IoT sensor data processing
+        - Friday Technologies: iOS/visionOS development, CoreML integration
+        - Strong project portfolio: RAG systems, predictive analytics, NLP
+        - Technical depth: Python, AWS, ML frameworks, backend systems
+        
+        Scoring Logic:
+        - New grad/entry-level roles: 100% (perfect match)
+        - 0-2 years experience: 90% (Harvey qualifies with internship experience)
+        - 2-3 years experience: 80% (Harvey's depth compensates for formal years)
+        - 3-4 years experience: 60% (stretch but feasible with strong portfolio)
+        - 5+ years experience: 20% (too senior, unlikely to be considered)
         """
         if not eligibility_text:
-            return 50.0, {'status': 'no_requirements_found'}  # Neutral if no requirements listed
+            return 70.0, {'status': 'no_requirements_found'}  # Slightly positive if unclear
         
         matches = {
             'experience_match': False,
+            'experience_level': 'unknown',
             'skills_in_requirements': [],
             'concerns': []
         }
         
+        # Check for new grad / entry-level indicators (BEST match for Harvey)
+        new_grad_patterns = [
+            r'\bnew grad\b', r'\bnew graduate\b', r'\brecent graduate\b',
+            r'\bentry[- ]level\b', r'\bentry level\b',
+            r'\b2025 grad\b', r'\b2026 grad\b',
+            r'\bgraduat(e|ing) (in |from )?20(25|26)\b',
+            r'\bbachelor\'?s degree required\b', r'\bbs in computer science\b',
+            r'\b0[- ]1 year', r'\b0[- ]2 year', r'\b1[- ]2 year'
+        ]
+        
+        for pattern in new_grad_patterns:
+            if re.search(pattern, eligibility_text.lower()):
+                matches['experience_match'] = True
+                matches['experience_level'] = 'new_grad'
+                break
+        
         # Check experience requirements
-        # Harvey has 3-4 years, so look for: 2-5 years, 3+ years, 4+ years
         exp_patterns = [
             r'(\d+)\s*[-–to]+\s*(\d+)\s*years',  # Range: 2-5 years
             r'(\d+)\+?\s*years'  # Minimum: 3+ years
@@ -401,44 +453,77 @@ class JobScorer:
             matches_found = re.findall(pattern, eligibility_text.lower())
             for match in matches_found:
                 if isinstance(match, tuple):
-                    # Range match
+                    # Range match (e.g., "2-5 years")
                     min_years = int(match[0])
                     max_years = int(match[1]) if match[1] else min_years
                     
-                    # Harvey has 3-4 years
-                    if min_years <= 4 and max_years >= 3:
+                    # Harvey: new grad with ~2 years internship experience
+                    if min_years == 0 or (min_years <= 2 and max_years <= 3):
+                        # 0-2 years, 1-3 years = excellent match
                         matches['experience_match'] = True
-                    elif min_years >= 6:
-                        matches['concerns'].append(f'requires_{min_years}+_years')
+                        matches['experience_level'] = '0-2_years'
+                    elif min_years <= 2 and max_years <= 4:
+                        # 2-4 years = good match (Harvey's depth compensates)
+                        matches['experience_match'] = True
+                        matches['experience_level'] = '2-3_years'
+                    elif min_years <= 3 and max_years <= 5:
+                        # 3-5 years = stretch but possible
+                        matches['experience_match'] = True
+                        matches['experience_level'] = '3-4_years'
+                    elif min_years >= 5:
+                        # 5+ years = too senior
+                        matches['concerns'].append(f'requires_{min_years}-{max_years}_years')
+                        matches['experience_level'] = '5+_years'
                 else:
-                    # Single number match
+                    # Single number match (e.g., "3+ years")
                     years = int(match)
-                    if 2 <= years <= 5:
+                    
+                    if years <= 2:
+                        # 2+ years or less = great match
                         matches['experience_match'] = True
-                    elif years >= 6:
+                        matches['experience_level'] = '0-2_years'
+                    elif years == 3:
+                        # 3+ years = good match (Harvey can compete)
+                        matches['experience_match'] = True
+                        matches['experience_level'] = '2-3_years'
+                    elif years == 4:
+                        # 4+ years = stretch
+                        matches['experience_match'] = True
+                        matches['experience_level'] = '3-4_years'
+                    elif years >= 5:
+                        # 5+ years = too senior
                         matches['concerns'].append(f'requires_{years}+_years')
+                        matches['experience_level'] = '5+_years'
         
-        # Check for Harvey's skills in requirements
+        # Check for Harvey's skills in requirements (demonstrates capability)
         for skill in self.all_skills:
             pattern = r'\b' + re.escape(skill) + r'\b'
             if re.search(pattern, eligibility_text, re.IGNORECASE):
                 matches['skills_in_requirements'].append(skill)
         
-        # Calculate score
-        score = 50  # Base score
+        # Calculate score based on experience level match
+        if matches['experience_level'] == 'new_grad':
+            score = 100  # Perfect match - Harvey is a new grad
+        elif matches['experience_level'] == '0-2_years':
+            score = 90  # Excellent match - Harvey has ~2 years internship experience
+        elif matches['experience_level'] == '2-3_years':
+            score = 80  # Good match - Harvey's depth and portfolio compensate
+        elif matches['experience_level'] == '3-4_years':
+            score = 60  # Stretch but feasible with strong technical background
+        elif matches['experience_level'] == '5+_years':
+            score = 20  # Too senior - unlikely to be competitive
+        else:
+            # No clear experience requirement found
+            score = 70  # Assume entry/mid-level if not specified
         
-        # Experience match: +30 points
-        if matches['experience_match']:
-            score += 30
+        # Boost for skills match (shows Harvey meets technical requirements)
+        if len(matches['skills_in_requirements']) >= 5:
+            score = min(100, score + 10)  # +10% for strong skills alignment
+        elif len(matches['skills_in_requirements']) >= 3:
+            score = min(100, score + 5)   # +5% for decent skills alignment
         
-        # Skills in requirements: +20 points for 3+ matches
-        if len(matches['skills_in_requirements']) >= 3:
-            score += 20
-        elif len(matches['skills_in_requirements']) >= 1:
-            score += 10
-        
-        # Concerns: -40 points for each
-        score -= len(matches['concerns']) * 40
+        # Penalty for explicit concerns (e.g., "must have 7+ years")
+        score -= len(matches['concerns']) * 30
         
         return max(0, min(100, score)), matches
     
@@ -569,70 +654,81 @@ class JobScorer:
         seniority_ok: bool,
         total_score: float,
         ai_score: float = 50.0,
-        ai_details: Dict[str, Any] = None
+        ai_details: Dict[str, Any] = None,
+        breakdown_scores: Dict[str, float] = None
     ) -> str:
-        """Generate witty, concise 1-2 sentence reasoning for why I'm a good fit"""
+        """
+        Generate concise, analytical reasoning in 4-5 sentences max.
+        Focus on what matters: tech fit, domain relevance, and key requirements.
+        """
         
-        # Determine job type from tech/role matches
-        ml_keywords = ['machine learning', 'ml', 'ai', 'data science', 'nlp', 'deep learning', 'pytorch', 'tensorflow']
-        backend_keywords = ['backend', 'api', 'server', 'database', 'microservices', 'rest', 'graphql']
-        fullstack_keywords = ['fullstack', 'full stack', 'full-stack', 'frontend', 'react', 'vue', 'angular']
+        if breakdown_scores is None:
+            breakdown_scores = {}
+        if ai_details is None:
+            ai_details = {}
         
-        all_terms = ' '.join([
-            *tech_matches,
-            *role_matches,
-            *industry_matches
-        ]).lower()
+        sentences = []
         
-        is_ml = any(kw in all_terms for kw in ml_keywords)
-        is_backend = any(kw in all_terms for kw in backend_keywords)
-        is_fullstack = any(kw in all_terms for kw in fullstack_keywords)
-        
-        # Priority industry check
-        priority_keywords = ['medical', 'medtech', 'healthcare', 'healthtech', 
-                           'agriculture', 'agtech', 'ag tech', 'farm',
-                           'fashion tech', 'fashiontech', 'apparel']
-        has_priority = any(pri in all_terms for pri in priority_keywords)
-        
-        # Generate witty, concise fit message from AI's perspective
+        # Sentence 1: Overall assessment with key matches
         if total_score >= 75:
-            # High score - confident and specific
-            if is_ml and has_priority:
-                return "Harvey's ML pipeline work at FibreTrace—transforming raw sensor data into enterprise features—translates directly to this mission-critical data infrastructure."
-            elif is_ml:
-                return "Strong match: Harvey has built production ML systems at FibreTrace processing millions of data points, directly applicable to these data challenges."
-            elif is_backend and has_priority:
-                return "Excellent fit: Harvey's backend scaling at Friday Technologies plus ML deployment at FibreTrace aligns well with this tech-driven mission."
-            elif is_backend:
-                return "Solid match: Harvey's experience building scalable APIs at Friday Technologies and deploying ML models at FibreTrace provides strong production backend foundation."
-            elif is_fullstack:
-                return "Good fit: Harvey's full-stack work—backend systems at Friday Technologies and data pipelines at FibreTrace—offers the versatility this role demands."
-            else:
-                return "Strong candidate: Harvey's experience constructing production systems that translate raw inputs into user-focused features positions him well for this challenge."
-        
-        elif total_score >= 50:
-            # Medium score - highlight transferable skills
-            if is_ml:
-                return "Transferable skills: While Harvey's ML work at FibreTrace focused on sensor data, his pipeline building and model deployment experience applies here."
-            elif is_backend:
-                return "Relevant background: Harvey's backend engineering at Friday Technologies—APIs, databases, scalability—provides solid foundation for these technical demands."
-            elif is_fullstack:
-                return "Adaptable fit: Though Harvey's focus has been backend-heavy, his full-stack experience at Friday Technologies and data work at FibreTrace make him flexible."
-            else:
-                tech_str = tech_matches[0] if tech_matches else "this stack"
-                return f"Decent match: Harvey's foundation in backend engineering and data pipelines gives him a strong starting point for working with {tech_str}."
-        
+            intro = f"Strong match at {total_score:.0f}%"
+        elif total_score >= 60:
+            intro = f"Solid fit at {total_score:.0f}%"
         else:
-            # Lower score - honest but optimistic
-            if visa_status == 'excluded':
-                return "Potential blocker: This looks interesting, though the visa sponsorship situation might need clarification before proceeding."
-            elif not seniority_ok:
-                return "Reach opportunity: Role seems geared toward more senior candidates, but Harvey's production experience may still translate—worth exploring."
+            intro = f"Moderate fit at {total_score:.0f}%"
+        
+        # Add primary reason
+        if tech_matches:
+            intro += f" - {len(tech_matches)} technical matches including {', '.join(tech_matches[:3])}"
+        elif role_matches:
+            intro += f" - role aligns as {', '.join(role_matches[:2])}"
+        
+        sentences.append(intro + ".")
+        
+        # Sentence 2: Industry/Domain relevance (if applicable)
+        if industry_matches:
+            priority_industries = ['healthcare', 'healthtech', 'medtech', 'agtech', 'agriculture', 'fashion tech', 'sustainability']
+            has_priority = any(ind.lower() in [i.lower() for i in industry_matches] for ind in priority_industries)
+            if has_priority:
+                sentences.append(f"Priority industry ({', '.join(industry_matches[:2])}) aligns with target sectors.")
             else:
-                return "Stretch role: Technical stack differs from Harvey's core experience, but his adaptability and foundation in production systems could make this work."
-
-
-# Convenience function
+                sentences.append(f"Industry experience applicable: {', '.join(industry_matches[:2])}.")
+        
+        # Sentence 3: Visa/Location/Seniority concerns (if any)
+        concerns = []
+        if visa_status == 'excluded':
+            concerns.append("visa sponsorship explicitly excluded")
+        elif visa_status == 'explicit':
+            concerns.append("offers visa sponsorship")
+        
+        if not location_ok:
+            concerns.append("not in NYC/remote")
+        
+        if not seniority_ok:
+            concerns.append("senior-level position")
+        
+        if concerns:
+            sentences.append(f"Note: {', '.join(concerns)}.")
+        
+        # Sentence 4: Requirements gap (if significant)
+        if eligibility_matches:
+            missing_reqs = eligibility_matches.get('missing', [])
+            if missing_reqs and len(missing_reqs) >= 2:
+                sentences.append(f"May need to emphasize transferable skills for: {', '.join(missing_reqs[:2])}.")
+        
+        # Sentence 5: AI semantic assessment (only if very relevant)
+        if ai_details and ai_details.get('method') == 'sentence_transformer':
+            similarity = ai_details.get('similarity', 0)
+            if similarity >= 0.7:
+                sentences.append(f"Strong semantic alignment detected (similarity: {similarity:.2f}).")
+            elif similarity < 0.4 and total_score < 60:
+                sentences.append(f"Limited semantic overlap - review job description carefully.")
+        
+        # Return max 5 sentences
+        return " ".join(sentences[:5])
+    
+    def _parse_title_seniority(self, title: str) -> str:
+        """Parse job title to determine seniority level"""
 def score_job(job_data: Dict[str, Any]) -> Dict[str, Any]:
     """Score a job listing"""
     scorer = JobScorer()

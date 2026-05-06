@@ -42,10 +42,25 @@ class SeekScraper(BaseScraper):
             chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_argument(f'user-agent={self.user_agent}')
             
+            # Set binary location for Docker
+            import os
+            chrome_bin = os.environ.get('CHROME_BIN')
+            if chrome_bin:
+                chrome_options.binary_location = chrome_bin
+            
             try:
-                service = Service(ChromeDriverManager().install())
+                # Use system chromedriver if CHROMEDRIVER_PATH is set (Docker)
+                chromedriver_path = os.environ.get('CHROMEDRIVER_PATH')
+                if chromedriver_path and os.path.exists(chromedriver_path):
+                    service = Service(chromedriver_path)
+                    logger.info(f"Using system chromedriver at {chromedriver_path}")
+                else:
+                    # Fall back to ChromeDriverManager for local development
+                    service = Service(ChromeDriverManager().install())
+                    logger.info("Using ChromeDriverManager")
+                
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                logger.info("Seek Chrome driver initialized")
+                logger.info("Seek Chrome driver initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize Chrome driver: {e}")
                 return None

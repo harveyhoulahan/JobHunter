@@ -122,6 +122,17 @@ class AutoSubmitManager:
             self._init_driver()
             self.driver.get(job_data['url'])
             
+            # Some Greenhouse jobs require clicking "Apply" button first
+            try:
+                apply_button = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a.app-btn, button.app-btn, a[href*='#app'], button:contains('Apply')"))
+                )
+                logger.info("Clicking 'Apply' button...")
+                apply_button.click()
+                time.sleep(2)
+            except TimeoutException:
+                logger.info("No 'Apply' button found, assuming form is already visible")
+            
             # Wait for form to load
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.ID, "first_name"))
@@ -133,12 +144,31 @@ class AutoSubmitManager:
             self._fill_field_by_id("email", "harveyhoulahan@outlook.com")
             self._fill_field_by_id("phone", "+1234567890")  # Update with real number
             
-            # Upload resume
-            resume_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file'][name='resume']")
-            resume_input.send_keys(os.path.abspath(resume_path))
+            # Upload resume - try multiple selectors
+            resume_input = None
+            resume_selectors = [
+                "input[type='file'][name='resume']",
+                "input[type='file'][id*='resume']",
+                "input[type='file']",
+                "#resume",
+                "input[accept*='pdf']"
+            ]
             
-            # Wait for resume to process
-            time.sleep(2)
+            for selector in resume_selectors:
+                try:
+                    resume_input = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if resume_input:
+                        logger.info(f"Found resume upload field with selector: {selector}")
+                        break
+                except NoSuchElementException:
+                    continue
+            
+            if resume_input:
+                resume_input.send_keys(os.path.abspath(resume_path))
+                logger.info("Resume uploaded successfully")
+                time.sleep(2)
+            else:
+                logger.warning("Could not find resume upload field - continuing anyway")
             
             # Fill LinkedIn URL if available
             try:

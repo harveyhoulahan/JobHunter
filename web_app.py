@@ -3,9 +3,13 @@
 JobHunter Web Dashboard
 Simple web interface for managing job applications
 """
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
 from sqlalchemy import desc
 from src.database.models import Database, Job, SearchHistory
+from src.applying.cover_letter_pdf import CoverLetterPDFGenerator
+from src.applying.gpt4_cover_letter import generate_gpt4_cover_letter
+from src.scoring.goldcoast_scorer import GoldCoastJobScorer
+from src.scrapers.seek import SeekScraper
 from datetime import datetime
 from loguru import logger
 import threading
@@ -16,20 +20,34 @@ app = Flask(__name__)
 db = Database()
 scrape_lock = threading.Lock()
 scrape_running = False
+goldcoast_scorer = GoldCoastJobScorer()
+seek_scraper = SeekScraper()  # Use existing Selenium-based Seek scraper
 
 
 @app.route('/')
 def index():
     """Main dashboard - shows all jobs"""
     session = db.get_session()
+    mode = request.args.get('mode', 'tech')  # 'tech' or 'goldcoast'
+    
     try:
-        # Get jobs grouped by priority tiers
-        # Only show NEW jobs (not applied) by default
-        all_jobs = session.query(Job)\
-            .filter(Job.applied == False)\
-            .order_by(Job.fit_score.desc(), Job.created_at.desc())\
-            .limit(200)\
-            .all()
+        # Get jobs based on mode
+        if mode == 'goldcoast':
+            # Filter for Gold Coast jobs
+            all_jobs = session.query(Job)\
+                .filter(Job.applied == False)\
+                .filter((Job.location.contains('Gold Coast')) | (Job.source == 'seek_goldcoast'))\
+                .order_by(Job.fit_score.desc(), Job.created_at.desc())\
+                .limit(200)\
+                .all()
+        else:
+            # Tech jobs (existing logic)
+            all_jobs = session.query(Job)\
+                .filter(Job.applied == False)\
+                .filter(Job.source != 'seek_goldcoast')\
+                .order_by(Job.fit_score.desc(), Job.created_at.desc())\
+                .limit(200)\
+                .all()
         
         # Group jobs by score tiers (fit_score is already a float, not a SQLAlchemy column at this point)
         top_matches = []
@@ -138,6 +156,41 @@ def add_interview():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
+@app.route('/api/job/<int:job_id>')
+def get_job_details(job_id):
+    """Get full details for a specific job"""
+    try:
+        session = db.get_session()
+        try:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return jsonify({'success': False, 'error': 'Job not found'}), 404
+            
+            job_details = {
+                'id': job.id,
+                'title': job.title,
+                'company': job.company,
+                'url': job.url,
+                'description': job.description,
+                'location': job.location,
+                'remote': job.remote,
+                'fit_score': float(job.fit_score) if job.fit_score else 0.0,
+                'reasoning': job.reasoning,
+                'tech_matches': job.tech_matches,
+                'industry_matches': job.industry_matches,
+                'role_matches': job.role_matches,
+                'posted_date': job.posted_date,
+                'source': job.source
+            }
+            
+            return jsonify({'success': True, 'job': job_details})
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"Error getting job details: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/cover_letter/<int:job_id>')
 def get_cover_letter(job_id):
     """Get cover letter for a job"""
@@ -209,6 +262,281 @@ def get_cover_letter(job_id):
         })
     except Exception as e:
         logger.error(f"Error in get_cover_letter: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cover_letter/<int:job_id>/pdf')
+def download_cover_letter_pdf(job_id):
+    """Download or preview cover letter as PDF"""
+    try:
+        # Check if specific filename is requested (for preview)
+        filename = request.args.get('filename')
+        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
+        
+        if filename:
+            # Direct preview of specific PDF file
+            pdf_path = os.path.join(applications_dir, filename)
+            if os.path.exists(pdf_path):
+                return send_file(
+                    pdf_path,
+                    mimetype='application/pdf',
+                    as_attachment=False  # Display in browser instead of download
+                )
+            else:
+                return jsonify({'success': False, 'error': 'PDF file not found'}), 404
+        
+        # Otherwise, find and generate PDF for this job
+        # First get the job details from database to find source_id
+        session = db.get_session()
+        try:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return jsonify({'success': False, 'error': 'Job not found'}), 404
+            
+            source_id = job.source_id
+            company = job.company
+            title = job.title
+        finally:
+            session.close()
+        
+        # Strategy: Look through metadata files to find the matching job
+        cover_letter_files = []
+        
+        for filename in os.listdir(applications_dir):
+            if not filename.endswith('_metadata.json'):
+                continue
+            
+            metadata_path = os.path.join(applications_dir, filename)
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                
+                # Check if this metadata matches our job
+                job_data = metadata.get('job', {})
+                meta_source_id = job_data.get('id') or job_data.get('job_id')
+                meta_company = job_data.get('company', '')
+                meta_title = job_data.get('title', '')
+                
+                # Match if source_id matches OR (company and title match)
+                is_match = False
+                if source_id is not None and meta_source_id and str(source_id) == str(meta_source_id):
+                    is_match = True
+                elif company.lower() in meta_company.lower() and title.lower() in meta_title.lower():
+                    is_match = True
+                
+                if is_match:
+                    # Found a match! Get the corresponding cover letter
+                    cover_letter_file = metadata_path.replace('_metadata.json', '_cover_letter.txt')
+                    if os.path.exists(cover_letter_file):
+                        cover_letter_files.append((cover_letter_file, os.path.getmtime(cover_letter_file)))
+                        
+            except Exception as e:
+                logger.debug(f"Error reading metadata {filename}: {e}")
+                continue
+        
+        if not cover_letter_files:
+            return jsonify({'success': False, 'error': 'No cover letter found for this job'}), 404
+        
+        # Get the most recent one if multiple matches
+        latest_file = max(cover_letter_files, key=lambda x: x[1])[0]
+        
+        # Read cover letter text
+        with open(latest_file, 'r') as f:
+            cover_letter_text = f.read()
+        
+        # Generate PDF
+        pdf_generator = CoverLetterPDFGenerator()
+        pdf_path = latest_file.replace('_cover_letter.txt', '_cover_letter.pdf')
+        
+        pdf_generator.generate_pdf(
+            cover_letter_text=cover_letter_text,
+            job_title=title,
+            company_name=company,
+            output_path=pdf_path
+        )
+        
+        # Send the PDF file
+        return send_file(
+            pdf_path,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f"cover_letter_{company.replace(' ', '_')}_{title.replace(' ', '_')[:30]}.pdf"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF cover letter: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cover_letter/generate/<int:job_id>', methods=['POST'])
+def generate_cover_letter(job_id):
+    """Generate a new cover letter on-demand for a job"""
+    try:
+        # Get job details from database
+        session = db.get_session()
+        try:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return jsonify({'success': False, 'error': 'Job not found'}), 404
+            
+            # Prepare job data for cover letter generation
+            job_data = {
+                'company': job.company,
+                'title': job.title,
+                'description': job.description or '',
+                'location': job.location or '',
+                'id': job.source_id or job.id
+            }
+            
+            score_data = {
+                'fit_score': float(job.fit_score) if job.fit_score else 0.0,
+                'reasoning': job.reasoning or '',
+                'matches': {
+                    'tech': job.tech_matches or []
+                }
+            }
+        finally:
+            session.close()
+        
+        # Generate cover letter using GPT-4
+        logger.info(f"Generating cover letter for job {job_id}: {job_data['company']} - {job_data['title']}")
+        cover_letter_text = generate_gpt4_cover_letter(job_data, score_data)
+        
+        # Save cover letter to applications directory
+        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
+        os.makedirs(applications_dir, exist_ok=True)
+        
+        # Create filename using timestamp and job identifier
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_company = job_data['company'].replace(' ', '-').replace('/', '-')[:50]
+        safe_title = job_data['title'].replace(' ', '-').replace('/', '-')[:50]
+        identifier = f"{timestamp}_{job_data['id']}_{safe_company}_{safe_title}"
+        
+        cover_letter_file = os.path.join(applications_dir, f"app_{identifier}_cover_letter.txt")
+        metadata_file = os.path.join(applications_dir, f"app_{identifier}_metadata.json")
+        
+        # Save cover letter text
+        with open(cover_letter_file, 'w') as f:
+            f.write(cover_letter_text)
+        
+        # Save metadata for matching later
+        metadata = {
+            'job': job_data,
+            'generated_at': datetime.now().isoformat(),
+            'type': 'cover_letter'
+        }
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        logger.info(f"Saved cover letter to {cover_letter_file}")
+        
+        return jsonify({
+            'success': True,
+            'cover_letter': cover_letter_text,
+            'filename': os.path.basename(cover_letter_file),
+            'message': 'Cover letter generated successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating cover letter: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cover_letter/save/<int:job_id>', methods=['POST'])
+def save_cover_letter(job_id):
+    """Save edited cover letter text"""
+    try:
+        data = request.get_json()
+        if not data or 'cover_letter' not in data:
+            return jsonify({'success': False, 'error': 'No cover letter text provided'}), 400
+        
+        cover_letter_text = data['cover_letter']
+        
+        # Get job details from database
+        session = db.get_session()
+        try:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return jsonify({'success': False, 'error': 'Job not found'}), 404
+            
+            source_id = job.source_id
+            company = job.company
+            title = job.title
+        finally:
+            session.close()
+        
+        # Find existing cover letter file or create new one
+        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
+        os.makedirs(applications_dir, exist_ok=True)
+        
+        # Look for existing cover letter file
+        cover_letter_file = None
+        for filename in os.listdir(applications_dir):
+            if not filename.endswith('_metadata.json'):
+                continue
+            
+            metadata_path = os.path.join(applications_dir, filename)
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                
+                job_data = metadata.get('job', {})
+                meta_source_id = job_data.get('id') or job_data.get('job_id')
+                meta_company = job_data.get('company', '')
+                meta_title = job_data.get('title', '')
+                
+                # Match if source_id matches OR (company and title match)
+                is_match = False
+                if source_id is not None and meta_source_id and str(source_id) == str(meta_source_id):
+                    is_match = True
+                elif company.lower() in meta_company.lower() and title.lower() in meta_title.lower():
+                    is_match = True
+                
+                if is_match:
+                    cover_letter_file = metadata_path.replace('_metadata.json', '_cover_letter.txt')
+                    break
+                    
+            except Exception as e:
+                logger.debug(f"Error reading metadata {filename}: {e}")
+                continue
+        
+        # If no existing file, create new one
+        if not cover_letter_file or not os.path.exists(cover_letter_file):
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            safe_company = company.replace(' ', '-').replace('/', '-')[:50]
+            safe_title = title.replace(' ', '-').replace('/', '-')[:50]
+            identifier = f"{timestamp}_{source_id or job_id}_{safe_company}_{safe_title}"
+            
+            cover_letter_file = os.path.join(applications_dir, f"app_{identifier}_cover_letter.txt")
+            metadata_file = os.path.join(applications_dir, f"app_{identifier}_metadata.json")
+            
+            # Save metadata
+            metadata = {
+                'job': {
+                    'id': source_id,
+                    'company': company,
+                    'title': title
+                },
+                'saved_at': datetime.now().isoformat(),
+                'type': 'cover_letter'
+            }
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+        
+        # Save the cover letter text
+        with open(cover_letter_file, 'w') as f:
+            f.write(cover_letter_text)
+        
+        logger.info(f"Saved edited cover letter to {cover_letter_file}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Cover letter saved successfully',
+            'filename': os.path.basename(cover_letter_file)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error saving cover letter: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -348,8 +676,110 @@ def get_auto_submit():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/auto_submit_job', methods=['GET', 'POST'])
-def auto_submit_job():
+@app.route('/api/prepare_application/<int:job_id>', methods=['POST'])
+def prepare_application(job_id):
+    """
+    Prepare application for review before auto-submit
+    1. Generate cover letter if needed
+    2. Generate PDF
+    3. Return PDF path for user review
+    """
+    try:
+        session = db.get_session()
+        try:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return jsonify({'success': False, 'error': 'Job not found'}), 404
+            
+            # Prepare job and score data
+            job_data = {
+                'title': job.title,
+                'company': job.company,
+                'description': job.description,
+                'url': job.url
+            }
+            
+            score_data = {
+                'fit_score': float(job.fit_score) if job.fit_score else 0.0,
+                'reasoning': job.reasoning,
+                'matches': {
+                    'tech': job.tech_matches.split(',') if job.tech_matches else []
+                }
+            }
+        finally:
+            session.close()
+        
+        # Check if cover letter already exists
+        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
+        os.makedirs(applications_dir, exist_ok=True)
+        
+        # Find existing cover letter or generate new one
+        cover_letter_text = None
+        cover_letter_files = []
+        
+        for filename in os.listdir(applications_dir):
+            if filename.endswith('_cover_letter.txt') and str(job_id) in filename:
+                cover_letter_files.append(filename)
+        
+        if cover_letter_files:
+            # Use most recent cover letter
+            cover_letter_files.sort(reverse=True)
+            cover_letter_path = os.path.join(applications_dir, cover_letter_files[0])
+            with open(cover_letter_path, 'r') as f:
+                cover_letter_text = f.read()
+            logger.info(f"Found existing cover letter: {cover_letter_files[0]}")
+        else:
+            # Generate new cover letter
+            logger.info(f"Generating new cover letter for job {job_id}")
+            from src.applying.gpt4_cover_letter import generate_gpt4_cover_letter
+            
+            cover_letter_text = generate_gpt4_cover_letter(job_data, score_data)
+            
+            # Save the generated cover letter
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            cover_letter_filename = f"app_{timestamp}_{job_id}_cover_letter.txt"
+            cover_letter_path = os.path.join(applications_dir, cover_letter_filename)
+            
+            with open(cover_letter_path, 'w') as f:
+                f.write(cover_letter_text)
+            
+            logger.info(f"Saved cover letter: {cover_letter_filename}")
+        
+        # Generate PDF
+        from src.applying.cover_letter_pdf import CoverLetterPDFGenerator
+        
+        pdf_generator = CoverLetterPDFGenerator()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        pdf_filename = f"app_{timestamp}_{job_id}_cover_letter.pdf"
+        pdf_path = os.path.join(applications_dir, pdf_filename)
+        
+        pdf_generator.generate_pdf(
+            cover_letter_text=cover_letter_text,
+            company_name=job.company,
+            job_title=job.title,
+            output_path=pdf_path
+        )
+        
+        logger.info(f"Generated PDF: {pdf_filename}")
+        
+        return jsonify({
+            'success': True,
+            'cover_letter': cover_letter_text,
+            'pdf_filename': pdf_filename,
+            'job': {
+                'id': job_id,
+                'title': job.title,
+                'company': job.company
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error preparing application: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auto_submit', methods=['POST'])
+def auto_submit_job_endpoint():
     """
     Trigger auto-submit for a specific job application
     Can be called from email link or dashboard button
@@ -534,10 +964,172 @@ def _start_scrape_job():
 @app.route('/api/run_scrape', methods=['POST'])
 def run_scrape():
     """Trigger a background scrape run"""
-    started = _start_scrape_job()
+    mode = request.args.get('mode', 'tech')  # 'tech' or 'goldcoast'
+    
+    if mode == 'goldcoast':
+        # Run Gold Coast scraper
+        started = _start_goldcoast_scrape()
+    else:
+        # Run regular tech job scraper
+        started = _start_scrape_job()
+    
     if not started:
         return jsonify({'success': False, 'error': 'Scrape already running'}), 409
-    return jsonify({'success': True, 'message': 'Scrape started'}), 202
+    return jsonify({'success': True, 'message': f'{mode.title()} scrape started'}), 202
+
+
+def _start_goldcoast_scrape():
+    """Start Gold Coast job scraping in background thread"""
+    global scrape_running
+    
+    if scrape_running:
+        return False
+    
+    def scrape_goldcoast_jobs():
+        global scrape_running
+        scrape_running = True
+        
+        try:
+            logger.info("Starting Gold Coast job scrape...")
+            
+            # Expanded Gold Coast lifestyle job search terms
+            gold_coast_terms = [
+                # Wellness & Retreats
+                'wellness retreat',
+                'spa therapist',
+                'yoga instructor',
+                'massage therapist',
+                'wellness coordinator',
+                'retreat coordinator',
+                # Fitness & Sport
+                'personal trainer',
+                'fitness instructor',
+                'pilates instructor',
+                'tennis coach',
+                'gym instructor',
+                'hiking guide',
+                'surf instructor',
+                'sports coach',
+                'recreation officer',
+                # Boutique Hospitality
+                'boutique hotel',
+                'concierge casual',
+                'guest services',
+                'hotel casual',
+                'reception casual',
+                # Food & Beverage
+                'barista casual',
+                'cafe casual',
+                'bartender casual',
+                'waiter casual',
+                'kitchen hand',
+                # Lifestyle & Creative
+                'gallery assistant',
+                'events casual',
+                'tourism casual',
+                'outdoor guide',
+                'beach club'
+            ]
+            
+            # Expanded Gold Coast region locations (from Byron Bay down to Gold Coast)
+            gold_coast_locations = [
+                # Northern NSW (Byron area)
+                "Byron Bay NSW",
+                "Brunswick Heads NSW",
+                "Suffolk Park NSW",
+                "Bangalow NSW",
+                # Northern Gold Coast
+                "Tweed Heads NSW",
+                "Kingscliff NSW",
+                "Cabarita Beach NSW",
+                # Gold Coast Hinterland
+                "Tamborine Mountain QLD",
+                "Mount Tamborine QLD",
+                # Gold Coast Main Areas
+                "Gold Coast QLD",
+                "Burleigh Heads QLD",
+                "Mermaid Beach QLD",
+                "Broadbeach QLD",
+                "Currumbin QLD",
+                "Palm Beach QLD",
+                "Coolangatta QLD"
+            ]
+            
+            # Use existing SeekScraper with expanded terms and locations
+            all_jobs = []
+            
+            # Search more locations with more terms (10 terms per location)
+            for location in gold_coast_locations[:8]:  # Focus on top 8 locations
+                logger.info(f"Searching {location}...")
+                jobs = seek_scraper.search_jobs(gold_coast_terms[:10], location=location)
+                all_jobs.extend(jobs)
+                
+                # Get more jobs - aim for 100-150 total
+                if len(all_jobs) >= 150:
+                    break
+            
+            jobs = all_jobs[:150]  # Limit to 150 total
+            
+            session = db.get_session()
+            new_jobs_count = 0
+            
+            for job_data in jobs:
+                try:
+                    # Check if job already exists
+                    existing = session.query(Job).filter(Job.url == job_data['url']).first()
+                    if existing:
+                        continue
+                    
+                    # Fetch full description for new jobs only (more efficient)
+                    logger.debug(f"Fetching full description for: {job_data['title']}")
+                    full_description = seek_scraper.fetch_single_job_description(job_data['url'])
+                    
+                    # Use full description if fetched, otherwise use snippet
+                    description = full_description if full_description and len(full_description) > 100 else job_data['description']
+                    
+                    # Score the job with Gold Coast scorer using full description
+                    result = goldcoast_scorer.score_job({
+                        'title': job_data['title'],
+                        'company': job_data['company'],
+                        'description': description,
+                        'location': job_data['location']
+                    })
+                    
+                    # Create job entry
+                    new_job = Job(
+                        title=job_data['title'],
+                        company=job_data['company'],
+                        location=job_data['location'],
+                        description=description,  # Use full description
+                        url=job_data['url'],
+                        source='seek_goldcoast',
+                        source_id=job_data.get('source_id', job_data['url']),
+                        fit_score=result['fit_score'],
+                        reasoning=result['reasoning'],
+                        remote=False,
+                        applied=False
+                    )
+                    
+                    session.add(new_job)
+                    new_jobs_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error processing Gold Coast job: {e}")
+                    continue
+            
+            session.commit()
+            session.close()
+            
+            logger.info(f"Gold Coast scrape complete: {new_jobs_count} new jobs added")
+            
+        except Exception as e:
+            logger.error(f"Gold Coast scrape failed: {e}")
+        finally:
+            scrape_running = False
+    
+    thread = threading.Thread(target=scrape_goldcoast_jobs, daemon=True)
+    thread.start()
+    return True
 
 
 @app.route('/api/status', methods=['GET'])

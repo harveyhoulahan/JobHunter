@@ -9,7 +9,7 @@
     <div class="job-header">
         <div class="job-header-content">
             <div class="job-title">{{ job.title }}</div>
-            <div class="job-company">🏢 {{ job.company }}</div>
+            <div class="job-company">{{ job.company }}</div>
         </div>
         <div class="score-badge {% if job.fit_score >= 70 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
             {{ "%.0f"|format(job.fit_score or 0) }}%
@@ -18,10 +18,10 @@
 
     <!-- Quick Meta Info -->
     <div class="job-meta">
-        <span class="meta-item">📍 {{ job.location or 'Remote' }}</span>
-        {% if job.remote %}<span class="meta-item">🏠 Remote</span>{% endif %}
-        <span class="meta-item">🔗 {{ job.source or 'unknown' }}</span>
-        {% if job.posted_date %}<span class="meta-item">📅 {{ job.posted_date }}</span>{% endif %}
+        <span class="meta-item">{{ job.location or 'Remote' }}</span>
+        {% if job.remote %}<span class="meta-item">Remote</span>{% endif %}
+        <span class="meta-item">{{ job.source or 'unknown' }}</span>
+        {% if job.posted_date %}<span class="meta-item">{{ job.posted_date }}</span>{% endif %}
     </div>
 
     <!-- Skills & Tags -->
@@ -42,7 +42,8 @@
     <!-- Reasoning (Why it matches) -->
     <div class="job-reasoning">
         <div class="reasoning-label">Why it matches:</div>
-        {{ (job.reasoning or 'This role matches your skills and industry preferences.')[:200] }}{% if (job.reasoning or '')|length > 200 %}…{% endif %}
+        {{ (job.reasoning or 'This role matches your skills and industry preferences.')[:150] }}{% if (job.reasoning or '')|length > 150 %}…{% endif %}
+        <button class="btn-link" onclick="viewJobDetails({{ job.id }}, '{{ job.company }}', '{{ job.title }}')" style="margin-left: 8px; color: var(--primary); cursor: pointer; background: none; border: none; text-decoration: underline; font-size: 13px;">View full details</button>
     </div>
 
     <!-- Actions -->
@@ -52,7 +53,7 @@
            class="btn btn-primary btn-small apply-link"
            data-job-id="{{ job.id }}"
            data-company="{{ job.company }}">
-            <span>📝 Apply Myself</span>
+            <span>Apply Myself</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                 <polyline points="15 3 21 3 21 9"></polyline>
@@ -61,20 +62,25 @@
         </a>
 
         {% if not job.applied_date %}
+        <!-- Only show auto-submit for supported platforms -->
+        {% set url_lower = job.url|lower %}
+        {% set source_lower = (job.source or '')|lower %}
+        {% if 'greenhouse.io' in url_lower or 'lever.co' in url_lower or 'myworkdayjobs.com' in url_lower %}
         <button class="btn btn-success btn-small auto-submit-btn" 
                 data-job-id="{{ job.id }}" 
                 data-source-id="{{ job.source_id }}"
                 data-company="{{ job.company }}"
                 title="Automatically submit application using generated CV">
-            <span>⚡ Auto-Submit</span>
+            <span>Auto-Submit</span>
         </button>
+        {% endif %}
         
         <button class="btn btn-surface btn-small mark-applied-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}">
-            <span>✓ Mark applied</span>
+            <span>Mark applied</span>
         </button>
         {% else %}
         <button class="btn btn-surface btn-small update-status-btn" data-job-id="{{ job.id }}">
-            <span>📝 Update</span>
+            <span>Update</span>
         </button>
         {% endif %}
 
@@ -82,13 +88,13 @@
                 data-job-id="{{ job.id }}" 
                 data-company="{{ job.company }}" 
                 data-title="{{ job.title }}">
-            <span>📄 Cover Letter</span>
+            <span>Cover Letter</span>
         </button>
         
         <button class="btn btn-ghost btn-small hide-job-btn" 
                 data-job-id="{{ job.id }}" 
                 title="Hide this job">
-            <span>✕ Hide</span>
+            <span>Hide</span>
         </button>
     </div>
 </div>

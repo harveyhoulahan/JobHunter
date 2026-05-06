@@ -10,6 +10,10 @@
     <div class="page">
         <div class="header">
             <div class="brand">JobHunter</div>
+            <div class="mode-switcher">
+                <button class="mode-btn active" data-mode="tech">Tech Jobs</button>
+                <button class="mode-btn" data-mode="goldcoast">Gold Coast Lifestyle</button>
+            </div>
             <div class="nav">
                 <a href="/">All Jobs</a>
                 <a href="/applied">My Applications</a>
@@ -199,7 +203,7 @@
     <!-- Confirmation Dialog for Application -->
     <div id="confirmApplyModal" class="modal">
         <div class="modal-content" style="max-width: 480px; text-align: center;">
-            <div style="font-size: 48px; margin-bottom: 16px;">✨</div>
+            <div style="font-size: 48px; margin-bottom: 16px;">Generate Cover Letter</div>
             <h3 style="margin-bottom: 8px;">Did you just apply?</h3>
             <p style="color: var(--muted); margin-bottom: 24px; line-height: 1.6;">
                 We noticed you clicked apply for <strong id="confirmCompanyName" style="color: var(--accent-2);"></strong>.
@@ -244,20 +248,107 @@
 
     <!-- Cover Letter Modal -->
     <div id="coverLetterModal" class="modal">
-        <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-content" style="max-width: 800px;">
             <h3>Cover Letter</h3>
-            <div id="coverLetterContent" style="max-height: 500px; overflow-y: auto; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; line-height: 1.7; white-space: pre-wrap; font-family: 'Inter', sans-serif;">
-                Loading...
+            <div id="coverLetterLoadingState" style="display: none; text-align: center; padding: 40px; color: var(--muted);">
+                <p>🔄 Generating cover letter with AI...</p>
+                <p style="font-size: 14px; margin-top: 8px;">This may take 10-15 seconds</p>
+            </div>
+            <div id="coverLetterEmptyState" style="display: none; text-align: center; padding: 40px;">
+                <p style="font-size: 18px; margin-bottom: 12px; color: var(--warning);">📝 No cover letter yet</p>
+                <p style="color: var(--muted); font-size: 14px; margin-bottom: 20px;">Generate a customized cover letter for this position using AI</p>
+                <button class="btn btn-primary" onclick="generateCoverLetter()" id="generateCoverLetterBtn">Generate Cover Letter</button>
+            </div>
+            <div id="coverLetterEditArea" style="display: none;">
+                <textarea id="coverLetterContent" 
+                    style="width: 100%; min-height: 450px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; line-height: 1.7; font-family: 'Inter', sans-serif; color: var(--text); resize: vertical; font-size: 14px;"
+                    placeholder="Cover letter will appear here...">Loading...</textarea>
+                <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px; color: var(--muted); font-size: 13px;">
+                    <span id="wordCount">0 words</span>
+                    <span>•</span>
+                    <span id="charCount">0 characters</span>
+                    <span style="margin-left: auto; color: var(--success);">✓ Auto-saves on edit</span>
+                </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="btn btn-primary" onclick="copyCoverLetter()">Copy to Clipboard</button>
+                <button class="btn btn-primary" onclick="copyCoverLetter()" id="copyCoverLetterBtn" style="display: none;">📋 Copy to Clipboard</button>
+                <button class="btn btn-success" onclick="downloadCoverLetterPDF()" id="downloadPDFBtn" style="display: none;">Download PDF</button>
+                <button class="btn btn-outline" onclick="generateCoverLetter()" id="regenerateCoverLetterBtn" style="display: none;">🔄 Regenerate</button>
                 <button class="btn btn-outline" onclick="closeModal('coverLetterModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Details Modal -->
+    <div id="jobDetailsModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <h3 id="jobDetailsTitle">Job Details</h3>
+            <div id="jobDetailsContent" style="max-height: 600px; overflow-y: auto;">
+                <div style="margin-bottom: 20px;">
+                    <strong style="color: var(--primary);">Company:</strong> <span id="jobDetailsCompany"></span>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <strong style="color: var(--primary);">Location:</strong> <span id="jobDetailsLocation"></span>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <strong style="color: var(--primary);">Score:</strong> <span id="jobDetailsScore"></span>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <strong style="color: var(--primary);">Why it matches:</strong>
+                    <p id="jobDetailsReasoning" style="margin-top: 8px; line-height: 1.6;"></p>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <strong style="color: var(--primary);">Job Description:</strong>
+                    <div id="jobDetailsDescription" style="margin-top: 8px; line-height: 1.6; white-space: pre-wrap; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 8px; border: 1px solid var(--border);"></div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <a id="jobDetailsApplyBtn" href="#" target="_blank" class="btn btn-primary">Apply on Website</a>
+                <button class="btn btn-outline" onclick="closeModal('jobDetailsModal')">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
+
+    <!-- Application Review Modal -->
+    <div id="applicationReviewModal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <h3>Review Application for <span id="reviewCompany" style="color: var(--primary);"></span></h3>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+                <!-- Left: Cover Letter Editor -->
+                <div>
+                    <h4 style="margin-bottom: 12px;">Cover Letter</h4>
+                    <textarea 
+                        id="reviewCoverLetterText" 
+                        style="width: 100%; height: 500px; padding: 16px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: inherit; font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.5; resize: vertical;"
+                        placeholder="Cover letter text will appear here..."></textarea>
+                    <div style="margin-top: 8px; font-size: 13px; color: var(--text-secondary);">
+                        You can edit the cover letter before submitting
+                    </div>
+                </div>
+
+                <!-- Right: PDF Preview -->
+                <div>
+                    <h4 style="margin-bottom: 12px;">PDF Preview</h4>
+                    <iframe 
+                        id="pdfPreviewFrame" 
+                        style="width: 100%; height: 500px; border-radius: 8px; border: 1px solid var(--border); background: white;"
+                        src="about:blank"></iframe>
+                    <div style="margin-top: 8px; font-size: 13px; color: var(--text-secondary);">
+                        This is what employers will see
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 24px; justify-content: flex-end;">
+                <button class="btn btn-outline" onclick="closeModal('applicationReviewModal')">Cancel</button>
+                <button id="approveApplicationBtn" class="btn btn-primary">Approve & Submit</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         console.log('Dashboard JavaScript loaded successfully');
@@ -372,7 +463,7 @@
                 });
                 const result = await response.json();
                 if (result.success) {
-                    showToast('✓ Marked as applied!');
+                    showToast(' Marked as applied!');
                     closeModal('applyModal');
                     setTimeout(() => location.reload(), 700);
                 } else {
@@ -399,7 +490,7 @@
                 });
                 const result = await response.json();
                 if (result.success) {
-                    showToast(`✓ Updated to ${status}!`);
+                    showToast(` Updated to ${status}!`);
                     closeModal('statusModal');
                     setTimeout(() => location.reload(), 700);
                 } else {
@@ -419,47 +510,199 @@
 
         // View cover letter
         let currentCoverLetter = '';
+        let currentCoverLetterJobId = null;
+        let saveTimeout = null;
+        
         async function viewCoverLetter(jobId, company, title) {
             console.log('Fetching cover letter for job', jobId);
-            const contentDiv = document.getElementById('coverLetterContent');
+            currentCoverLetterJobId = jobId;
             
-            // Clear any existing content first
-            contentDiv.innerHTML = '';
-            contentDiv.textContent = 'Loading...';
+            const contentTextarea = document.getElementById('coverLetterContent');
+            const editArea = document.getElementById('coverLetterEditArea');
+            const emptyState = document.getElementById('coverLetterEmptyState');
+            const loadingState = document.getElementById('coverLetterLoadingState');
+            const pdfBtn = document.getElementById('downloadPDFBtn');
+            const copyBtn = document.getElementById('copyCoverLetterBtn');
+            const regenBtn = document.getElementById('regenerateCoverLetterBtn');
+            
+            // Reset UI
+            editArea.style.display = 'none';
+            emptyState.style.display = 'none';
+            loadingState.style.display = 'none';
+            pdfBtn.style.display = 'none';
+            copyBtn.style.display = 'none';
+            regenBtn.style.display = 'none';
+            
             openModal('coverLetterModal');
             
+            // Always show empty state first with generate button
+            // This allows users to generate fresh cover letters
+            emptyState.style.display = 'block';
+            
+            // Optional: Check if old cover letter exists in background
             try {
                 const response = await fetch(`/api/cover_letter/${jobId}`);
                 const result = await response.json();
                 
-                if (result.success) {
-                    currentCoverLetter = result.cover_letter;
-                    // Clear completely before setting new content
-                    contentDiv.innerHTML = '';
-                    contentDiv.textContent = result.cover_letter;
-                    console.log('Cover letter loaded successfully');
-                    console.log('Cover letter length:', result.cover_letter.length);
-                    console.log('First 100 chars:', result.cover_letter.substring(0, 100));
-                } else {
-                    contentDiv.innerHTML = `<div style="color: var(--warning); text-align: center; padding: 40px;">
-                        <p style="font-size: 18px; margin-bottom: 12px;">📄 No cover letter found</p>
-                        <p style="color: var(--muted); font-size: 14px;">This job hasn't been generated yet. Run the application generator for <strong>${company}</strong> - ${title}</p>
-                    </div>`;
-                    currentCoverLetter = '';
+                if (result.success && result.cover_letter) {
+                    // Found old cover letter - show it but keep generate button visible
+                    console.log('Found existing cover letter, but user can regenerate');
+                    // You can optionally auto-load it here if you want
+                    // For now, just keep the generate button visible
                 }
             } catch (err) {
-                console.error('Error fetching cover letter:', err);
-                contentDiv.innerHTML = `<div style="color: var(--danger); text-align: center; padding: 40px;">
-                    <p>Error loading cover letter</p>
-                    <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">${err.message}</p>
-                </div>`;
-                currentCoverLetter = '';
+                console.log('No existing cover letter found (or error):', err);
             }
+        }
+        
+        async function generateCoverLetter() {
+            if (!currentCoverLetterJobId) {
+                showToast(' No job selected');
+                return;
+            }
+            
+            const loadingState = document.getElementById('coverLetterLoadingState');
+            const emptyState = document.getElementById('coverLetterEmptyState');
+            const editArea = document.getElementById('coverLetterEditArea');
+            const contentTextarea = document.getElementById('coverLetterContent');
+            
+            // Show loading
+            emptyState.style.display = 'none';
+            editArea.style.display = 'none';
+            loadingState.style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/cover_letter/generate/${currentCoverLetterJobId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                
+                loadingState.style.display = 'none';
+                
+                if (result.success) {
+                    currentCoverLetter = result.cover_letter;
+                    contentTextarea.value = result.cover_letter;
+                    editArea.style.display = 'block';
+                    document.getElementById('downloadPDFBtn').style.display = 'inline-block';
+                    document.getElementById('copyCoverLetterBtn').style.display = 'inline-block';
+                    document.getElementById('regenerateCoverLetterBtn').style.display = 'inline-block';
+                    updateWordCount();
+                    showToast(' Cover letter generated!');
+                } else {
+                    emptyState.style.display = 'block';
+                    showToast(' Error: ' + (result.error || 'Could not generate cover letter'));
+                }
+            } catch (err) {
+                console.error('Error generating cover letter:', err);
+                loadingState.style.display = 'none';
+                emptyState.style.display = 'block';
+                showToast(' Network error when generating cover letter');
+            }
+        }
+        
+        // Auto-save on edit with debounce
+        document.addEventListener('DOMContentLoaded', function() {
+            const textarea = document.getElementById('coverLetterContent');
+            textarea.addEventListener('input', function() {
+                currentCoverLetter = this.value;
+                updateWordCount();
+                
+                // Debounce auto-save
+                clearTimeout(saveTimeout);
+                saveTimeout = setTimeout(() => {
+                    saveCoverLetter();
+                }, 1500); // Save 1.5 seconds after user stops typing
+            });
+        });
+        
+        async function saveCoverLetter() {
+            if (!currentCoverLetterJobId || !currentCoverLetter) return;
+            
+            try {
+                const response = await fetch(`/api/cover_letter/save/${currentCoverLetterJobId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cover_letter: currentCoverLetter })
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    console.log('Cover letter auto-saved');
+                } else {
+                    console.error('Error saving cover letter:', result.error);
+                }
+            } catch (err) {
+                console.error('Network error when saving cover letter:', err);
+            }
+        }
+        
+        function updateWordCount() {
+            const text = currentCoverLetter || '';
+            const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+            const chars = text.length;
+            document.getElementById('wordCount').textContent = `${words} words`;
+            document.getElementById('charCount').textContent = `${chars} characters`;
+        }
+
+        // View job details
+        async function viewJobDetails(jobId, company, title) {
+            console.log('Viewing job details for', jobId);
+            
+            try {
+                const response = await fetch(`/api/job/${jobId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const job = result.job;
+                    
+                    // Populate modal
+                    document.getElementById('jobDetailsTitle').textContent = job.title;
+                    document.getElementById('jobDetailsCompany').textContent = job.company;
+                    document.getElementById('jobDetailsLocation').textContent = job.location || 'Not specified';
+                    document.getElementById('jobDetailsScore').textContent = `${job.fit_score}%`;
+                    document.getElementById('jobDetailsReasoning').textContent = job.reasoning || 'No reasoning available';
+                    
+                    // Format description to be more readable
+                    let description = job.description || 'No description available';
+                    // Limit to first 1500 characters for readability
+                    if (description.length > 1500) {
+                        description = description.substring(0, 1500) + '...';
+                    }
+                    document.getElementById('jobDetailsDescription').textContent = description;
+                    
+                    document.getElementById('jobDetailsApplyBtn').href = job.url;
+                    
+                    openModal('jobDetailsModal');
+                } else {
+                    showToast(' Error loading job details');
+                }
+            } catch (err) {
+                console.error('Error fetching job details:', err);
+                showToast(' Network error loading job details');
+            }
+        }
+
+        function downloadCoverLetterPDF() {
+            if (!currentCoverLetterJobId) {
+                showToast(' No cover letter available for download');
+                return;
+            }
+            
+            // Create a temporary link to download the PDF
+            const link = document.createElement('a');
+            link.href = `/api/cover_letter/${currentCoverLetterJobId}/pdf`;
+            link.download = `cover_letter_job_${currentCoverLetterJobId}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast(' Downloading PDF...');
         }
 
         function copyCoverLetter() {
             if (!currentCoverLetter) {
-                showToast('⚠ No cover letter to copy');
+                showToast(' No cover letter to copy');
                 return;
             }
             
@@ -468,7 +711,7 @@
             // Try modern clipboard API first
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(currentCoverLetter).then(() => {
-                    showToast('✓ Copied to clipboard!');
+                    showToast(' Copied to clipboard!');
                     console.log('Successfully copied via clipboard API');
                 }).catch(err => {
                     console.error('Clipboard API failed:', err);
@@ -492,14 +735,14 @@
             try {
                 const successful = document.execCommand('copy');
                 if (successful) {
-                    showToast('✓ Copied to clipboard!');
+                    showToast(' Copied to clipboard!');
                     console.log('Successfully copied via fallback method');
                 } else {
-                    showToast('⚠ Could not copy to clipboard');
+                    showToast(' Could not copy to clipboard');
                     console.error('Fallback copy failed');
                 }
             } catch (err) {
-                showToast('⚠ Could not copy to clipboard');
+                showToast(' Could not copy to clipboard');
                 console.error('Fallback copy error:', err);
             }
             
@@ -512,11 +755,16 @@
             if (!runScrapeBtn) return;
             runScrapeBtn.disabled = true;
             runScrapeBtn.textContent = 'Running...';
+            
+            // Get current mode
+            const mode = new URLSearchParams(window.location.search).get('mode') || 
+                        localStorage.getItem('jobMode') || 'tech';
+            
             try {
-                const res = await fetch('/api/run_scrape', { method: 'POST' });
+                const res = await fetch(`/api/run_scrape?mode=${mode}`, { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
-                    showToast('Scrape started. Refresh in ~30s.');
+                    showToast(data.message || 'Scrape started. Refresh in ~30s.');
                 } else {
                     showToast('Scrape already running');
                 }
@@ -528,13 +776,56 @@
             }
         }
 
-        // Auto-submit job
+        // Auto-submit job with review
         async function autoSubmitJob(jobId, sourceId, company) {
-            if (!confirm(`Auto-submit application to ${company}?\n\nThis will:\n1. Find your generated CV for this job\n2. Auto-fill the application form\n3. Pause before final submit for your review`)) {
-                return;
-            }
+            // Step 1: Prepare application (generate cover letter + PDF)
+            showToast(' Preparing application...');
 
-            showToast('🚀 Starting auto-submit...');
+            try {
+                const prepareRes = await fetch(`/api/prepare_application/${jobId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const prepareData = await prepareRes.json();
+
+                if (!prepareData.success) {
+                    showToast(` Error: ${prepareData.error}`);
+                    return;
+                }
+
+                // Step 2: Show review modal with cover letter and PDF
+                showApplicationReview(jobId, company, prepareData.cover_letter, prepareData.pdf_filename);
+
+            } catch (err) {
+                console.error('Prepare application error:', err);
+                showToast(' Error preparing application');
+            }
+        }
+
+        // Show application review modal
+        function showApplicationReview(jobId, company, coverLetter, pdfFilename) {
+            const modal = document.getElementById('applicationReviewModal');
+            const coverLetterTextarea = document.getElementById('reviewCoverLetterText');
+            const pdfPreview = document.getElementById('pdfPreviewFrame');
+            const approveBtn = document.getElementById('approveApplicationBtn');
+
+            // Populate modal
+            document.getElementById('reviewCompany').textContent = company;
+            coverLetterTextarea.value = coverLetter;
+            pdfPreview.src = `/api/cover_letter/${jobId}/pdf?filename=${pdfFilename}`;
+
+            // Setup approve button
+            approveBtn.onclick = () => approveAndSubmit(jobId, company);
+
+            // Open modal
+            openModal('applicationReviewModal');
+        }
+
+        // Approve and submit application
+        async function approveAndSubmit(jobId, company) {
+            closeModal('applicationReviewModal');
+            showToast(' Submitting application...');
 
             try {
                 const res = await fetch('/api/auto_submit', {
@@ -547,22 +838,21 @@
 
                 if (data.success) {
                     if (data.status === 'submitted') {
-                        showToast(`✅ Application submitted to ${company}!`);
-                        // Mark as applied automatically
+                        showToast(` Application submitted to ${company}!`);
                         setTimeout(() => {
                             markApplied(jobId, company);
                         }, 1000);
                     } else if (data.status === 'ready_for_review') {
-                        showToast(`✓ Application filled! Review and submit manually.`);
+                        showToast(` Application filled! Review and submit manually.`);
                     } else {
-                        showToast(`⚠ ${data.message || 'Manual application required'}`);
+                        showToast(` ${data.message || 'Manual application required'}`);
                     }
                 } else {
-                    showToast(`❌ Auto-submit failed: ${data.error || 'Unknown error'}`);
+                    showToast(` Auto-submit failed: ${data.error || 'Unknown error'}`);
                 }
             } catch (err) {
                 console.error('Auto-submit error:', err);
-                showToast('❌ Error during auto-submit');
+                showToast(' Error during auto-submit');
             }
         }
 
@@ -689,7 +979,7 @@
                 updateVisibleCount();
             }, 300);
             
-            showToast('✓ Job hidden');
+            showToast(' Job hidden');
         }
 
         // Auto-submit job application
@@ -709,12 +999,12 @@
                 
                 // Mark as applied after a delay
                 setTimeout(() => {
-                    showToast('✓ Auto-submit initiated - check the new tab');
+                    showToast(' Auto-submit initiated - check the new tab');
                 }, 2000);
                 
             } catch (error) {
                 console.error('Auto-submit error:', error);
-                showToast('❌ Auto-submit failed: ' + error.message);
+                showToast(' Auto-submit failed: ' + error.message);
             }
         }
 
@@ -741,6 +1031,39 @@
         
         // Apply hidden jobs on load
         window.addEventListener('DOMContentLoaded', applyHiddenJobs);
+
+        // Mode switching logic
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const mode = this.dataset.mode;
+                
+                // Update active state
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                
+                // Save preference
+                localStorage.setItem('jobMode', mode);
+                
+                // Reload with mode parameter
+                const url = new URL(window.location);
+                url.searchParams.set('mode', mode);
+                window.location.href = url.toString();
+            });
+        });
+
+        // Restore mode on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const mode = urlParams.get('mode') || localStorage.getItem('jobMode') || 'tech';
+            
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                if (btn.dataset.mode === mode) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        });
     </script>
 </body>
 </html>

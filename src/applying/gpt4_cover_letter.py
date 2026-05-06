@@ -5,9 +5,11 @@ that showcase Harvey's unique value proposition for each role.
 """
 
 import os
+import requests
 from typing import Dict, Any, Optional
 from loguru import logger
 from openai import OpenAI
+from bs4 import BeautifulSoup
 
 # Add parent directory to path
 import sys
@@ -54,8 +56,11 @@ class GPT4CoverLetterGenerator:
             Beautifully written cover letter
         """
         
+        # Research company website first
+        company_context = self._research_company_website(job_data.get('company'))
+        
         # Build comprehensive context for GPT-4
-        prompt = self._build_prompt(job_data, score_data, tone)
+        prompt = self._build_prompt(job_data, score_data, company_context, tone)
         
         try:
             logger.info(f"Generating GPT-4 cover letter for {job_data.get('company')} - {job_data.get('title')}")
@@ -72,11 +77,11 @@ class GPT4CoverLetterGenerator:
                         "content": prompt
                     }
                 ],
-                temperature=0.6,  # More controlled, less flowery
-                max_tokens=500,   # Shorter letters (~350 words max)
-                top_p=0.85,
-                frequency_penalty=0.6,  # Strong penalty against AI clichés
-                presence_penalty=0.2
+                temperature=0.7,  # Balanced creativity
+                max_tokens=500,   # Allow for detailed examples with metrics
+                top_p=0.9,
+                frequency_penalty=0.8,  # Strong penalty against AI clichés
+                presence_penalty=0.3
             )
             
             cover_letter = response.choices[0].message.content.strip()
@@ -89,125 +94,229 @@ class GPT4CoverLetterGenerator:
             # Fallback to template-based generation
             return self._generate_fallback(job_data, score_data)
     
+    def _research_company_website(self, company_name: str) -> Dict[str, Any]:
+        """
+        Scrape company website for culture, mission, values
+        Returns insights about the company
+        """
+        if not company_name:
+            return {}
+        
+        try:
+            # Try common patterns for company websites
+            search_query = f"{company_name} company website"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            }
+            
+            # Simple approach: Try company.com, company.io, etc.
+            domain_variants = [
+                f"https://{company_name.lower().replace(' ', '')}.com",
+                f"https://{company_name.lower().replace(' ', '')}.io",
+                f"https://www.{company_name.lower().replace(' ', '')}.com"
+            ]
+            
+            company_info = {
+                'mission': '',
+                'values': [],
+                'culture_keywords': []
+            }
+            
+            for url in domain_variants:
+                try:
+                    response = requests.get(url, headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        
+                        # Extract mission/about text
+                        text_content = soup.get_text()[:2000]  # First 2000 chars
+                        
+                        # Look for mission/values keywords
+                        mission_keywords = ['mission', 'vision', 'purpose', 'about us', 'what we do']
+                        culture_keywords = ['culture', 'values', 'team', 'people', 'diversity', 'innovation']
+                        
+                        for keyword in mission_keywords:
+                            if keyword in text_content.lower():
+                                # Extract surrounding context
+                                idx = text_content.lower().find(keyword)
+                                company_info['mission'] = text_content[max(0, idx-100):idx+200]
+                                break
+                        
+                        for keyword in culture_keywords:
+                            if keyword in text_content.lower():
+                                company_info['culture_keywords'].append(keyword)
+                        
+                        logger.info(f"Successfully scraped {company_name} website: {url}")
+                        return company_info
+                        
+                except Exception as e:
+                    continue
+            
+            logger.debug(f"Could not scrape {company_name} website")
+            return company_info
+            
+        except Exception as e:
+            logger.debug(f"Website research failed for {company_name}: {e}")
+            return {}
+    
     def _get_system_prompt(self) -> str:
         """System prompt that defines GPT-4's role and style"""
-        return """You write technical cover letters for a software engineer. Use this EXACT style:
+        return """You write SHORT, GENUINE cover letters that blend concise directness with concrete examples.
 
-REFERENCE EXAMPLE:
-"Centene's mission in improving health outcomes with technology resonates with my background building high-reliability software across data-heavy domains (energy systems, supply chains, and consumer apps). I've delivered production modules spanning service interfaces, business logic, UI, and data access layers in Python, C, and C#; I also work comfortably with Java/Go stacks and modern front-ends (React) on AWS.
+STYLE BLEND - Two reference examples:
 
-At the Australian Energy Market Operator (AEMO), I engineered end-to-end data flows over large market datasets (MMS/NEM/NEMWeb), including:
-• High-throughput C parsers for telemetry/market files (streaming validation, memory-mapped I/O), with Python bindings feeding ETL and analytics dashboards used in real-time operations.
-• C# microservices interfacing with MMS schemas/APIs and SQL stores (retryable jobs, schema-aware transforms, RBAC/audit), reducing reporting latency and improving reliability for PASA/dispatch workflows.
+EXAMPLE 1 (Concise & Direct):
+"Dear Cohere Hiring Team,
 
-I'm excited to bring the same discipline to Centene: implementing well-factored services and process flows, shaping designs that meet functional/non-functional requirements, and contributing to secure, testable code that scales."
+I am writing to express my interest in the Software Engineer - Applied ML (US/CAN) position at Cohere. My experience building NLP models and machine learning systems for supply chain tracking at FibreTrace, as core ML on iOS/visionOS at Friday Technologies, aligns well with your focus on deploying frontier models and AI agents. The tech stack I've worked with, including PyTorch, AWS, and various MLOps tools, seems like a good fit for your projects.
 
-STRUCTURE (3 paragraphs):
-1. Opening: "[Company]'s mission/focus in [X] resonates with my background building [Y] across [domains]. I've delivered [specific tech/systems] in [languages/stack]."
+As an Australian citizen based in New York, I'm eligible for the E-3 visa, which simplifies work authorization in the U.S., and I'm available for onsite work. I'm particularly excited by the opportunity to contribute to Cohere's mission of scaling intelligence through custom LLMs and AI agents. My background in applying ML/AI across different platforms has equipped me with a versatile skill set that can adapt to Cohere's innovative environment.
 
-2. Experience bullets: "At [Company], I [built/engineered/developed] [system], including:
-   • [Specific technical achievement with metrics/tech stack]
-   • [Another achievement with technical details]"
+Thank you for considering my application. I would appreciate the chance to discuss how my experience can help drive value for Cohere's customers and further your mission of shaping the future of AI.
 
-3. Close: "I'm excited to bring the same discipline to [Company]: [what you'll do]. I would value the chance to discuss how my experience in [tech stack] can help [Company] [achieve X]."
+Sincerely,
+Harvey Houlahan"
 
-KEY STYLE POINTS:
-- Technical density: mention specific frameworks, patterns, metrics
-- Bullet points with parenthetical tech details: "(streaming validation, memory-mapped I/O)"
-- Action verbs: engineered, built, delivered, shipped, implemented
-- Concrete outcomes: "reducing latency", "improving reliability", "used in real-time operations"
-- Sign off: "Sincerely, Harvey Houlahan" (NOT "Best")
+EXAMPLE 2 (Specific & Metric-Driven):
+"Dear Hiring Team,
 
-FORBIDDEN:
-- Do NOT use: "drawn to", "aligns", "honed", "spearheaded", "robust", "leveraging", "passionate", "innovative", "cutting-edge"
-- Do NOT be casual or flowery
-- Do NOT sound like marketing copy
+Coram AI's focus on reimagining video security through computer vision and AI aligns closely with my background in crafting solutions that blend real-time data provenance with AI-powered analytics across the domains of supply chain management and tech innovation. I've delivered scalable machine learning models and data processing pipelines in Python, C++, Swift, and leveraged cloud-native technologies (AWS, Docker) to handle terabyte-scale datasets.
+
+At FibreTrace, I engineered a luminescent-pigment solution for tracking cotton supply chains, including:
+• Deployment of NLP models (RAG, GPT) for semantic search across global supply chain data, improving traceability and transparency metrics by over 60%.
+• Development of real-time analytics dashboards using React and Swift for iOS platforms, enabling instant provenance verification that supported decision-making processes for clients like Target and Cargill.
+
+At Friday Technologies, an Apple-recognized consultancy, I developed innovations using Core ML on iOS/visionOS/macOS platforms:
+• Implemented generative models for enhancing image quality in low-light conditions on visionOS, reducing error rates by 25% in object recognition tasks.
+• Engineered a scalable ETL pipeline on AWS Cloud-Native stack for processing multi-terabyte datasets from mobile sensors, optimizing data flow efficiency by 40%.
+
+I'm excited to bring the same discipline to Coram AI: turning data into actionable intelligence that powers your platform in real time. I would value the chance to discuss how my experience in Python, C++, Cloud Engineering, and machine learning fundamentals can help Coram AI deliver impactful security solutions with optimized latency and throughput.
+
+Sincerely,
+Harvey Houlahan"
+
+YOUR WRITING STYLE:
+Blend these approaches based on the role:
+- Technical/ML roles: Use specific examples with metrics (like Example 2)
+- General engineering: Keep it concise and direct (like Example 1)
+- Always include E-3 visa mention and New York location
+- Use bullet points ONLY when showing concrete achievements with metrics
+- Otherwise use flowing paragraphs
+
+STRICT RULES:
+1. MAX 200 words for concise style, MAX 250 words if using bullet points with metrics
+2. Start with "Dear [Company] Hiring Team," or "Dear Hiring Manager,"
+3. First paragraph: Company mission alignment + relevant experience
+4. Second paragraph: E-3 visa status OR specific achievements with metrics
+5. Third paragraph: Enthusiasm + call to action
+6. Sign: "Sincerely, Harvey Houlahan"
+
+FORBIDDEN PHRASES:
+- "resonates deeply"
+- "passionate about"
+- "thrilled to leverage"
+- "cutting-edge solutions"
+- "robust" (unless talking about code robustness specifically)
+
+GOOD PHRASES:
+- "aligns closely/well with"
+- "excited to bring" / "excited by the opportunity"
+- "I would appreciate the chance to discuss"
+- "My experience in X can help [company] achieve Y"
+- Specific metrics: "60% improvement", "25% reduction", "40% optimization"
 """
     
     def _build_prompt(
         self,
         job_data: Dict[str, Any],
         score_data: Dict[str, Any],
+        company_context: Dict[str, Any],
         tone: str
     ) -> str:
         """Build detailed prompt with all context GPT-4 needs"""
         
         company = job_data.get('company', 'the company')
         title = job_data.get('title', 'this role')
-        description = job_data.get('description', '')[:3000]  # Limit to avoid token overflow
+        description = job_data.get('description', '')[:2000]  # Limit to avoid token overflow
         
         # Extract key insights from scoring
-        fit_score = score_data.get('fit_score', 0)
-        reasoning = score_data.get('reasoning', '')
         tech_matches = score_data.get('matches', {}).get('tech', [])
-        role_matches = score_data.get('matches', {}).get('role', [])
-        company_research = score_data.get('company_research', {})
+        fit_score = score_data.get('fit_score', 0)
         
-        # Build Harvey's profile summary
-        edu = HARVEY_PROFILE['education'][0]  # First education entry
-        profile_summary = f"""
-CANDIDATE: Harvey Houlahan
-EDUCATION: {edu['degree']} from {edu['institution']}
-LOCATION: {HARVEY_PROFILE['location']}
-
-BACKGROUND:
-{HARVEY_PROFILE['summary']}
-
-CORE TECHNICAL SKILLS:
-- AI/ML: {', '.join(HARVEY_PROFILE['skills']['ai_ml'][:8])}
-- Backend: {', '.join(HARVEY_PROFILE['skills']['backend'][:8])}
-- Full-stack: {', '.join(HARVEY_PROFILE['skills']['fullstack'][:6])}
-- Cloud & Data: {', '.join(HARVEY_PROFILE['skills']['cloud'][:4])}, {', '.join(HARVEY_PROFILE['skills']['data'][:4])}
+        # Build company insights
+        company_info = ""
+        if company_context.get('mission'):
+            company_info = f"\nCOMPANY MISSION/FOCUS:\n{company_context['mission']}\n"
+        if company_context.get('culture_keywords'):
+            company_info += f"\nCOMPANY CULTURE: {', '.join(company_context['culture_keywords'])}\n"
+        
+        # Determine if this is a technical/ML role that warrants detailed examples
+        is_technical_role = any(keyword in title.lower() + description.lower() 
+                               for keyword in ['machine learning', 'ml', 'ai', 'data science', 
+                                             'computer vision', 'nlp', 'deep learning'])
+        
+        style_guidance = ""
+        if is_technical_role and fit_score > 70:
+            style_guidance = """
+APPROACH: Use the METRIC-DRIVEN style (like Coram AI example)
+- Include bullet points with specific achievements and metrics
+- Mention: 60% improvement in traceability (NLP/RAG at FibreTrace)
+- Mention: 25% error reduction in object recognition (visionOS at Friday)
+- Mention: 40% data flow optimization (ETL on AWS)
+- Show depth in Python, ML/AI, PyTorch, AWS, cloud-native tech
+- Max 250 words
+"""
+        else:
+            style_guidance = """
+APPROACH: Use the CONCISE & DIRECT style (like Cohere example)
+- Flowing paragraphs, no bullet points
+- Brief mention of FibreTrace (NLP, supply chain) and Friday (iOS/visionOS ML)
+- Focus on alignment and transferable skills
+- Max 200 words
 """
         
-        # Build company insights if available
-        company_insights = ""
-        if company_research and company_research.get('insights'):
-            company_insights = "\n\nCOMPANY RESEARCH INSIGHTS:\n" + "\n".join(
-                f"- {insight}" for insight in company_research['insights'][:3]
-            )
-        
-        # Build matching analysis
-        match_analysis = f"""
-FIT ANALYSIS (AI Score: {fit_score}%):
-{reasoning}
+        prompt = f"""Write a cover letter for this job using the BLENDED STYLE:
 
-Technical Alignment: {', '.join(tech_matches[:5]) if tech_matches else 'General tech stack'}
-Role Alignment: {', '.join(role_matches[:3]) if role_matches else 'Software engineering'}
-"""
-        
-        prompt = f"""Write a technical cover letter for this job using the EXACT style from the reference example:
+ROLE: {title} at {company}
+FIT SCORE: {fit_score}%
+{company_info}
 
-ROLE: {title}
-COMPANY: {company}
-{company_insights}
+JOB DESCRIPTION:
+{description[:1500]}
 
-JOB DESCRIPTION (key excerpts):
-{description[:2000]}
+HARVEY'S BACKGROUND:
+- Currently based in New York, NY
+- Australian citizen eligible for E-3 visa (no H-1B needed, only requires LCA)
+- Available for onsite/hybrid work
+- Highly transferable skills across ML, backend systems, data pipelines
 
-{profile_summary}
+KEY EXPERIENCE:
+• FibreTrace: Built ML systems for supply chain tracking (Target, Cargill clients)
+  - NLP models (RAG, GPT) for semantic search: 60% improvement in traceability
+  - Real-time analytics dashboards (React, Swift iOS): instant provenance verification
+  - Processing 1M+ data points daily (PyTorch, AWS)
+  
+• Friday Technologies (Apple-recognized consultancy)
+  - Core ML on iOS/visionOS: generative models for low-light image enhancement, 25% error reduction
+  - Scalable ETL pipeline on AWS Cloud-Native: multi-terabyte datasets from mobile sensors, 40% efficiency gain
+  
+• Tech stack: {', '.join(tech_matches[:8]) if tech_matches else 'Python, C++, Swift, ML/AI, PyTorch, AWS, Docker, React'}
 
-{match_analysis}
+{style_guidance}
 
-INSTRUCTIONS:
-Follow the reference example structure EXACTLY:
+STRUCTURE:
+Paragraph 1: Company mission/focus alignment + relevant experience overview
+Paragraph 2: Either (A) specific achievements with metrics OR (B) E-3 visa + transferable skills
+Paragraph 3: Excitement about opportunity + call to action
 
-Paragraph 1: "{company}'s [mission/focus] in [what they do] resonates with my background building [relevant systems] across [domains]. I've delivered [specific modules/systems] in [tech stack list]."
+Remember:
+- Sound genuine and human
+- Use "aligns well/closely with" naturally
+- Be specific about tech but keep it flowing
+- Mention E-3 visa and New York location
+- Close with appreciation and discussion invitation
 
-Paragraph 2: "At [FibreTrace or Friday Technologies], I [engineered/built/developed] [specific system], including:
-• [Technical achievement with parenthetical details about tech/metrics]
-• [Another achievement with technical depth]
-• [Optional third bullet]"
-
-Add second company if relevant with similar format.
-
-Paragraph 3: "I'm excited to bring the same discipline to {company}: [what you'll contribute]. I would value the chance to discuss how my experience in [list tech stack] can help {company} [achieve their goal]."
-
-Sign off: "Sincerely, Harvey Houlahan"
-
-CRITICAL: Match the technical density and parenthetical style: "(PyTorch, real-time inference)", "(streaming validation, memory-mapped I/O)", etc.
-
-Write the cover letter:"""
+Write the letter now:"""
         
         return prompt
     
