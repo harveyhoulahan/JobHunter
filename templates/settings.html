@@ -1,528 +1,370 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings - JobHunter</title>
-    <link rel="stylesheet" href="/static/style.css?v=2.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter · Settings</title>
+  <link rel="stylesheet" href="/static/style.css?v=3.2">
 </head>
 <body>
-    <div class="page">
-        <div class="header">
-            <div class="brand">JobHunter Settings</div>
-            <div class="nav">
-                <a href="/">All Jobs</a>
-                <a href="/applied">My Applications</a>
-                <a href="/stats">Statistics</a>
-                <a href="/settings" style="background: rgba(139, 92, 246, 0.2);">Settings</a>
-            </div>
-        </div>
-
-        <section class="panel" style="margin-top: 32px;">
-            <h2>Scraping Locations</h2>
-            <p style="color: var(--muted); margin-bottom: 24px;">
-                Add cities or regions to search for jobs. Future international job boards will be activated based on these locations.
-            </p>
-
-            <div style="display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap;">
-                <input id="newLocation" 
-                       type="text" 
-                       class="input" 
-                       placeholder="e.g., Melbourne, London, Berlin"
-                       style="flex: 1; min-width: 250px;">
-                <select id="countrySelect" class="select" style="width: 180px;">
-                    <option value="US">United States</option>
-                    <option value="AU">Australia</option>
-                    <option value="UK">United Kingdom</option>
-                    <option value="CA">Canada</option>
-                    <option value="DE">Germany</option>
-                    <option value="SG">Singapore</option>
-                    <option value="other">Other</option>
-                </select>
-                <button id="addLocationBtn" class="btn btn-primary">+ Add Location</button>
-            </div>
-
-            <div id="locationsList" class="locations-grid">
-                <!-- Locations will be populated here -->
-            </div>
-        </section>
-
-        <section class="panel" style="margin-top: 32px;">
-            <h2>Active Job Boards</h2>
-            <p style="color: var(--muted); margin-bottom: 24px;">
-                Job boards are automatically activated based on your locations. US locations enable LinkedIn & BuiltIn. Australian locations enable Seek.
-            </p>
-
-            <div class="job-boards-status">
-                <div class="board-card">
-                    <h3>🔵 LinkedIn</h3>
-                    <div class="status active">Active</div>
-                    <p>Coverage: Global</p>
-                </div>
-                <div class="board-card">
-                    <h3>🏗️ BuiltIn</h3>
-                    <div class="status active">Active</div>
-                    <p>Coverage: US Tech Hubs</p>
-                </div>
-                <div class="board-card">
-                    <h3>🚀 Y Combinator</h3>
-                    <div class="status active">Active</div>
-                    <p>Coverage: YC Startups (Global)</p>
-                </div>
-                <div class="board-card" id="seekBoard">
-                    <h3>🦘 Seek</h3>
-                    <div class="status" id="seekStatus">Inactive</div>
-                    <p>Coverage: Australia & NZ</p>
-                    <small style="color: var(--muted);">Auto-activates with AU locations</small>
-                </div>
-                <div class="board-card">
-                    <h3>🇬🇧 Reed</h3>
-                    <div class="status inactive">Coming Soon</div>
-                    <p>Coverage: United Kingdom</p>
-                    <small style="color: var(--muted);">Auto-activates with UK locations</small>
-                </div>
-            </div>
-        </section>
-
-        <section class="panel" style="margin-top: 32px;">
-            <h2>⚡ Auto-Submit Applications</h2>
-            <p style="color: var(--muted); margin-bottom: 24px;">
-                Automatically submit applications to supported platforms. JobHunter generates custom CVs and cover letters, then submits them for you.
-            </p>
-
-            <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                    <span style="font-size: 24px;">⚠️</span>
-                    <strong>Review Mode Recommended</strong>
-                </div>
-                <p style="color: var(--muted); margin: 0; font-size: 14px;">
-                    Keep "Review Mode" ON to manually approve each application before submission. This ensures quality and prevents spam.
-                </p>
-            </div>
-
-            <div style="display: flex; gap: 24px; margin-bottom: 32px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 250px;">
-                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                        <input type="checkbox" id="autoSubmitEnabled" style="width: 20px; height: 20px;">
-                        <div>
-                            <div style="font-weight: 600; font-size: 16px;">Enable Auto-Submit</div>
-                            <div style="color: var(--muted); font-size: 13px;">Automatically submit to supported platforms</div>
-                        </div>
-                    </label>
-                </div>
-                <div style="flex: 1; min-width: 250px;">
-                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                        <input type="checkbox" id="reviewMode" checked style="width: 20px; height: 20px;">
-                        <div>
-                            <div style="font-weight: 600; font-size: 16px;">Review Mode</div>
-                            <div style="color: var(--muted); font-size: 13px;">Pause before final submit for approval</div>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
-            <h3 style="margin-bottom: 16px;">Supported Platforms</h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
-                <label class="platform-toggle">
-                    <input type="checkbox" id="autoSubmitGreenhouse" checked>
-                    <div class="platform-info">
-                        <div class="platform-name">🟢 Greenhouse</div>
-                        <div class="platform-coverage">Stripe, Airbnb, DoorDash</div>
-                    </div>
-                </label>
-                <label class="platform-toggle">
-                    <input type="checkbox" id="autoSubmitLever" checked>
-                    <div class="platform-info">
-                        <div class="platform-name">🟢 Lever</div>
-                        <div class="platform-coverage">Netflix, Uber, Spotify</div>
-                    </div>
-                </label>
-                <label class="platform-toggle">
-                    <input type="checkbox" id="autoSubmitEmail" checked>
-                    <div class="platform-info">
-                        <div class="platform-name">📧 Email</div>
-                        <div class="platform-coverage">Direct applications</div>
-                    </div>
-                </label>
-                <label class="platform-toggle">
-                    <input type="checkbox" id="autoSubmitWorkday">
-                    <div class="platform-info">
-                        <div class="platform-name">🟡 Workday</div>
-                        <div class="platform-coverage">Resume upload only</div>
-                    </div>
-                </label>
-            </div>
-
-            <div style="margin-top: 24px; padding: 16px; background: rgba(139, 92, 246, 0.1); border-radius: 12px;">
-                <strong>🚫 Not Supported:</strong>
-                <p style="color: var(--muted); margin: 8px 0 0 0; font-size: 14px;">
-                    LinkedIn Easy Apply is not supported (violates ToS, risks account ban). You'll receive custom cover letters for LinkedIn jobs to apply manually.
-                </p>
-            </div>
-        </section>
+<div class="shell">
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-logo">JH</div>
+      <span class="brand-name">JobHunter</span>
     </div>
+    <div class="topbar-pills">
+      <div class="t-pill"><span class="label">Settings</span><span class="val g">Live</span></div>
+      <div class="t-pill"><span class="label">Scope</span><span class="val">Cities · Countries · Work Types</span></div>
+    </div>
+    <div class="topbar-end">
+      <a class="btn btn-ghost" href="/">Dashboard</a>
+      <a class="btn btn-ghost" href="/applied">Applications</a>
+      <a class="btn btn-ghost" href="/stats">Stats</a>
+    </div>
+  </header>
 
-    <div id="toast" class="toast"></div>
+  <aside class="sidebar">
+    <div class="sb-section">
+      <div class="sb-label">Views</div>
+      <a class="nav-link" href="/">All new jobs</a>
+      <a class="nav-link" href="/applied">Applied</a>
+      <a class="nav-link" href="/stats">Statistics</a>
+      <a class="nav-link active" href="/settings">Settings</a>
+      <a class="nav-link" href="/setup">Setup / Profile</a>
+    </div>
+  </aside>
 
-    <script>
-        const DEFAULT_LOCATIONS = [
-            {name: 'New York, NY', country: 'US', enabled: true},
-            {name: 'Los Angeles, CA', country: 'US', enabled: true},
-            {name: 'San Francisco, CA', country: 'US', enabled: true},
-            {name: 'Seattle, WA', country: 'US', enabled: true},
-            {name: 'Austin, TX', country: 'US', enabled: true},
-            {name: 'Boston, MA', country: 'US', enabled: true},
-            {name: 'Remote', country: 'US', enabled: true},
-            {name: 'Melbourne VIC', country: 'AU', enabled: false},
-            {name: 'Sydney NSW', country: 'AU', enabled: false},
-            {name: 'Brisbane QLD', country: 'AU', enabled: false}
-        ];
+  <main class="main settings-main">
+    <section class="settings-section">
+      <h2>Scanning Scope</h2>
+      <p class="muted">Control exactly where scans run and what work types are included.</p>
 
-        function loadLocations() {
-            const stored = localStorage.getItem('scrapingLocations');
-            return stored ? JSON.parse(stored) : DEFAULT_LOCATIONS;
-        }
+      <div class="row-form">
+        <input id="newLocation" class="finput grow" type="text" placeholder="Add city (e.g., Perth WA, Berlin, Austin TX)">
+        <select id="countrySelect" class="fselect compact">
+          <option value="AU">Australia</option>
+          <option value="US">United States</option>
+          <option value="UK">United Kingdom</option>
+          <option value="CA">Canada</option>
+          <option value="DE">Germany</option>
+          <option value="SG">Singapore</option>
+          <option value="GLOBAL">Global</option>
+        </select>
+        <button id="addLocationBtn" class="btn btn-green">Add city</button>
+      </div>
 
-        function saveLocations(locations) {
-            localStorage.setItem('scrapingLocations', JSON.stringify(locations));
-            
-            // Also sync to backend
-            fetch('/api/update_locations', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({locations: locations})
-            }).catch(err => console.error('Failed to sync locations:', err));
-        }
+      <h3>Country toggles</h3>
+      <div id="countryToggles" class="chips"></div>
 
-        function renderLocations() {
-            const locations = loadLocations();
-            const container = document.getElementById('locationsList');
-            
-            container.innerHTML = locations.map((loc, idx) => `
-                <div class="location-item ${loc.enabled ? '' : 'disabled'}">
-                    <div class="location-info">
-                        <div class="location-name">${loc.name}</div>
-                        <div class="location-country">${getFlagEmoji(loc.country)} ${loc.country}</div>
-                    </div>
-                    <div class="location-actions">
-                        <button class="btn-toggle ${loc.enabled ? 'active' : ''}" 
-                                onclick="toggleLocation(${idx})">
-                            ${loc.enabled ? '✓ Enabled' : 'Disabled'}
-                        </button>
-                        <button class="btn-remove" onclick="removeLocation(${idx})" title="Remove">
-                            ✕
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-            
-            // Update job board status based on active locations
-            updateJobBoardStatus(locations);
-        }
+      <h3>City toggles</h3>
+      <div id="locationsList" class="locations-grid"></div>
+    </section>
 
-        function updateJobBoardStatus(locations) {
-            // Check if any AU locations are enabled
-            const hasAU = locations.some(loc => loc.country === 'AU' && loc.enabled);
-            
-            const seekStatus = document.getElementById('seekStatus');
-            if (hasAU) {
-                seekStatus.textContent = 'Active';
-                seekStatus.className = 'status active';
-            } else {
-                seekStatus.textContent = 'Inactive';
-                seekStatus.className = 'status inactive';
-            }
-        }
+    <section class="settings-section">
+      <h2>Work Type Filters</h2>
+      <p class="muted">These apply to LinkedIn query filters across scans.</p>
+      <div class="work-type-grid">
+        <label class="toggle-card">
+          <input type="checkbox" id="workRemote">
+          <span>Remote</span>
+        </label>
+        <label class="toggle-card">
+          <input type="checkbox" id="workOnsite">
+          <span>On-site</span>
+        </label>
+        <label class="toggle-card">
+          <input type="checkbox" id="workHybrid">
+          <span>Hybrid</span>
+        </label>
+      </div>
+      <div class="row-form">
+        <button id="saveWorkTypeBtn" class="btn btn-green">Save work type filters</button>
+      </div>
+    </section>
 
-        function getFlagEmoji(country) {
-            const flags = {
-                'US': '🇺🇸', 'AU': '🇦🇺', 'UK': '🇬🇧', 
-                'CA': '🇨🇦', 'DE': '🇩🇪', 'SG': '🇸🇬'
-            };
-            return flags[country] || '🌍';
-        }
+    <section class="settings-section">
+      <h2>Auto-Submit Applications</h2>
+      <p class="muted">Uniform controls for supported platforms.</p>
+      <div class="work-type-grid">
+        <label class="toggle-card"><input type="checkbox" id="autoSubmitEnabled"><span>Enable Auto-Submit</span></label>
+        <label class="toggle-card"><input type="checkbox" id="reviewMode"><span>Review Mode</span></label>
+        <label class="toggle-card"><input type="checkbox" id="autoSubmitGreenhouse"><span>Greenhouse</span></label>
+        <label class="toggle-card"><input type="checkbox" id="autoSubmitLever"><span>Lever</span></label>
+        <label class="toggle-card"><input type="checkbox" id="autoSubmitEmail"><span>Email</span></label>
+        <label class="toggle-card"><input type="checkbox" id="autoSubmitWorkday"><span>Workday</span></label>
+      </div>
+      <div class="row-form">
+        <button id="saveAutoSubmitBtn" class="btn btn-green">Save auto-submit settings</button>
+      </div>
+    </section>
+  </main>
+</div>
 
-        function addLocation() {
-            const input = document.getElementById('newLocation');
-            const countrySelect = document.getElementById('countrySelect');
-            const name = input.value.trim();
-            const country = countrySelect.value;
-            
-            if (!name) {
-                showToast('⚠️ Please enter a location');
-                return;
-            }
+<div id="toast" class="toast"></div>
 
-            const locations = loadLocations();
-            
-            // Check for duplicates
-            if (locations.some(loc => loc.name.toLowerCase() === name.toLowerCase())) {
-                showToast('⚠️ Location already exists');
-                return;
-            }
+<script>
+let locationsState = [];
 
-            locations.push({name, country, enabled: true});
-            saveLocations(locations);
-            renderLocations();
-            
-            input.value = '';
-            showToast('✓ Location added');
-        }
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.add('on');
+  setTimeout(() => toast.classList.remove('on'), 2500);
+}
 
-        function toggleLocation(idx) {
-            const locations = loadLocations();
-            locations[idx].enabled = !locations[idx].enabled;
-            saveLocations(locations);
-            renderLocations();
-            showToast(locations[idx].enabled ? '✓ Location enabled' : 'Location disabled');
-        }
+function getFlagEmoji(country) {
+  const flags = {
+    US: '🇺🇸', AU: '🇦🇺', UK: '🇬🇧', CA: '🇨🇦', DE: '🇩🇪', SG: '🇸🇬', GLOBAL: '🌐'
+  };
+  return flags[country] || '🌍';
+}
 
-        function removeLocation(idx) {
-            if (!confirm('Remove this location from scraping?')) return;
-            
-            const locations = loadLocations();
-            locations.splice(idx, 1);
-            saveLocations(locations);
-            renderLocations();
-            showToast('✓ Location removed');
-        }
+async function fetchJson(url, options) {
+  const res = await fetch(url, options);
+  return res.json();
+}
 
-        function showToast(message) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.classList.add('active');
-            setTimeout(() => toast.classList.remove('active'), 2500);
-        }
+async function loadLocations() {
+  const data = await fetchJson('/api/get_locations');
+  if (!data.success) throw new Error(data.error || 'Failed to load locations');
+  locationsState = data.locations || [];
+}
 
-        // Event listeners
-        document.getElementById('addLocationBtn').addEventListener('click', addLocation);
-        document.getElementById('newLocation').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') addLocation();
-        });
+async function saveLocations() {
+  const data = await fetchJson('/api/update_locations', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ locations: locationsState })
+  });
+  if (!data.success) throw new Error(data.error || 'Failed to save locations');
+}
 
-        // Auto-submit settings
-        function loadAutoSubmitSettings() {
-            const settings = localStorage.getItem('autoSubmitSettings');
-            return settings ? JSON.parse(settings) : {
-                enabled: false,
-                reviewMode: true,
-                platforms: {
-                    greenhouse: true,
-                    lever: true,
-                    email: true,
-                    workday: false
-                }
-            };
-        }
+function renderCountryToggles() {
+  const countries = [...new Set(locationsState.map(loc => loc.country || 'GLOBAL'))].sort();
+  const container = document.getElementById('countryToggles');
+  container.innerHTML = countries.map(country => {
+    const enabledCount = locationsState.filter(l => l.country === country && l.enabled).length;
+    const totalCount = locationsState.filter(l => l.country === country).length;
+    const allEnabled = enabledCount === totalCount && totalCount > 0;
+    return `
+      <button class="btn ${allEnabled ? 'btn-green' : 'btn-outline'} chip-btn" data-country="${country}">
+        ${getFlagEmoji(country)} ${country} (${enabledCount}/${totalCount})
+      </button>
+    `;
+  }).join('');
 
-        function saveAutoSubmitSettings(settings) {
-            localStorage.setItem('autoSubmitSettings', JSON.stringify(settings));
-            
-            // Sync to backend
-            fetch('/api/update_auto_submit', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(settings)
-            }).catch(err => console.error('Failed to sync auto-submit settings:', err));
-        }
+  container.querySelectorAll('.chip-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const country = btn.dataset.country;
+      const countryRows = locationsState.filter(l => l.country === country);
+      const shouldEnable = countryRows.some(l => !l.enabled);
+      locationsState = locationsState.map(l => l.country === country ? { ...l, enabled: shouldEnable } : l);
+      try {
+        await saveLocations();
+        renderAll();
+        showToast(`${country} ${shouldEnable ? 'enabled' : 'disabled'}`);
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      }
+    });
+  });
+}
 
-        function initAutoSubmitSettings() {
-            const settings = loadAutoSubmitSettings();
-            
-            // Set checkboxes
-            document.getElementById('autoSubmitEnabled').checked = settings.enabled;
-            document.getElementById('reviewMode').checked = settings.reviewMode;
-            document.getElementById('autoSubmitGreenhouse').checked = settings.platforms.greenhouse;
-            document.getElementById('autoSubmitLever').checked = settings.platforms.lever;
-            document.getElementById('autoSubmitEmail').checked = settings.platforms.email;
-            document.getElementById('autoSubmitWorkday').checked = settings.platforms.workday;
-            
-            // Add change listeners
-            document.getElementById('autoSubmitEnabled').addEventListener('change', saveAutoSubmit);
-            document.getElementById('reviewMode').addEventListener('change', saveAutoSubmit);
-            document.getElementById('autoSubmitGreenhouse').addEventListener('change', saveAutoSubmit);
-            document.getElementById('autoSubmitLever').addEventListener('change', saveAutoSubmit);
-            document.getElementById('autoSubmitEmail').addEventListener('change', saveAutoSubmit);
-            document.getElementById('autoSubmitWorkday').addEventListener('change', saveAutoSubmit);
-        }
+function renderLocations() {
+  const container = document.getElementById('locationsList');
+  container.innerHTML = locationsState.map((loc, idx) => `
+    <div class="location-item ${loc.enabled ? '' : 'disabled'}">
+      <div class="location-info">
+        <div class="location-name">${loc.name}</div>
+        <div class="location-country">${getFlagEmoji(loc.country)} ${loc.country}</div>
+      </div>
+      <div class="location-actions">
+        <button class="btn ${loc.enabled ? 'btn-green' : 'btn-outline'} btn-sm" data-action="toggle" data-idx="${idx}">
+          ${loc.enabled ? 'Enabled' : 'Disabled'}
+        </button>
+        <button class="btn btn-warn btn-sm" data-action="remove" data-idx="${idx}">Remove</button>
+      </div>
+    </div>
+  `).join('');
 
-        function saveAutoSubmit() {
-            const settings = {
-                enabled: document.getElementById('autoSubmitEnabled').checked,
-                reviewMode: document.getElementById('reviewMode').checked,
-                platforms: {
-                    greenhouse: document.getElementById('autoSubmitGreenhouse').checked,
-                    lever: document.getElementById('autoSubmitLever').checked,
-                    email: document.getElementById('autoSubmitEmail').checked,
-                    workday: document.getElementById('autoSubmitWorkday').checked
-                }
-            };
-            
-            saveAutoSubmitSettings(settings);
-            showToast('✓ Auto-submit settings updated');
-        }
-        
-        // Initialize
-        renderLocations();
-        initAutoSubmitSettings();
-    </script>
+  container.querySelectorAll('button[data-action]').forEach(btn => {
+    const idx = Number(btn.dataset.idx);
+    const action = btn.dataset.action;
+    btn.addEventListener('click', async () => {
+      if (action === 'toggle') {
+        locationsState[idx].enabled = !locationsState[idx].enabled;
+      } else if (action === 'remove') {
+        locationsState.splice(idx, 1);
+      }
+      try {
+        await saveLocations();
+        renderAll();
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      }
+    });
+  });
+}
 
-    <style>
-        .locations-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
+function renderAll() {
+  renderCountryToggles();
+  renderLocations();
+}
 
-        .location-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 20px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            transition: all 0.2s;
-        }
+async function addLocation() {
+  const input = document.getElementById('newLocation');
+  const countrySelect = document.getElementById('countrySelect');
+  const name = input.value.trim();
+  const country = countrySelect.value;
+  if (!name) return showToast('Enter a location name');
+  if (locationsState.some(loc => loc.name.toLowerCase() === name.toLowerCase())) {
+    return showToast('Location already exists');
+  }
+  locationsState.push({ name, country, enabled: true });
+  try {
+    await saveLocations();
+    input.value = '';
+    renderAll();
+    showToast('Location added');
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
 
-        .location-item.disabled {
-            opacity: 0.5;
-        }
+async function loadWorkTypePrefs() {
+  const data = await fetchJson('/api/get_search_preferences');
+  if (!data.success) throw new Error(data.error || 'Failed loading work type preferences');
+  const prefs = (data.preferences && data.preferences.work_types) || {};
+  document.getElementById('workRemote').checked = !!prefs.remote;
+  document.getElementById('workOnsite').checked = !!prefs.onsite;
+  document.getElementById('workHybrid').checked = !!prefs.hybrid;
+}
 
-        .location-info {
-            flex: 1;
-        }
+async function saveWorkTypePrefs() {
+  const payload = {
+    work_types: {
+      remote: document.getElementById('workRemote').checked,
+      onsite: document.getElementById('workOnsite').checked,
+      hybrid: document.getElementById('workHybrid').checked
+    }
+  };
+  const data = await fetchJson('/api/update_search_preferences', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if (!data.success) throw new Error(data.error || 'Failed saving work type preferences');
+}
 
-        .location-name {
-            font-weight: 600;
-            font-size: 16px;
-            margin-bottom: 4px;
-        }
+async function loadAutoSubmit() {
+  const data = await fetchJson('/api/get_auto_submit');
+  if (!data.success) throw new Error(data.error || 'Failed loading auto-submit settings');
+  const s = data.settings || {};
+  const p = s.platforms || {};
+  document.getElementById('autoSubmitEnabled').checked = !!s.enabled;
+  document.getElementById('reviewMode').checked = !!s.reviewMode;
+  document.getElementById('autoSubmitGreenhouse').checked = !!p.greenhouse;
+  document.getElementById('autoSubmitLever').checked = !!p.lever;
+  document.getElementById('autoSubmitEmail').checked = !!p.email;
+  document.getElementById('autoSubmitWorkday').checked = !!p.workday;
+}
 
-        .location-country {
-            color: var(--muted);
-            font-size: 14px;
-        }
+async function saveAutoSubmit() {
+  const payload = {
+    enabled: document.getElementById('autoSubmitEnabled').checked,
+    reviewMode: document.getElementById('reviewMode').checked,
+    platforms: {
+      greenhouse: document.getElementById('autoSubmitGreenhouse').checked,
+      lever: document.getElementById('autoSubmitLever').checked,
+      email: document.getElementById('autoSubmitEmail').checked,
+      workday: document.getElementById('autoSubmitWorkday').checked
+    }
+  };
+  const data = await fetchJson('/api/update_auto_submit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if (!data.success) throw new Error(data.error || 'Failed saving auto-submit settings');
+}
 
-        .location-actions {
-            display: flex;
-            gap: 8px;
-        }
+document.getElementById('addLocationBtn').addEventListener('click', addLocation);
+document.getElementById('newLocation').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') addLocation();
+});
+document.getElementById('saveWorkTypeBtn').addEventListener('click', async () => {
+  try { await saveWorkTypePrefs(); showToast('Work type filters saved'); }
+  catch (err) { showToast(`Error: ${err.message}`); }
+});
+document.getElementById('saveAutoSubmitBtn').addEventListener('click', async () => {
+  try { await saveAutoSubmit(); showToast('Auto-submit settings saved'); }
+  catch (err) { showToast(`Error: ${err.message}`); }
+});
 
-        .btn-toggle {
-            padding: 8px 16px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: transparent;
-            color: var(--muted);
-            cursor: pointer;
-            transition: all 0.2s;
-            font-weight: 600;
-            font-size: 13px;
-        }
+(async function init() {
+  try {
+    await Promise.all([loadLocations(), loadWorkTypePrefs(), loadAutoSubmit()]);
+    renderAll();
+  } catch (err) {
+    showToast(`Error loading settings: ${err.message}`);
+  }
+})();
+</script>
 
-        .btn-toggle.active {
-            background: rgba(16, 185, 129, 0.1);
-            border-color: #10b981;
-            color: #10b981;
-        }
-
-        .btn-remove {
-            padding: 8px 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            background: transparent;
-            color: #ef4444;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-weight: 700;
-        }
-
-        .btn-remove:hover {
-            background: rgba(239, 68, 68, 0.1);
-            border-color: #ef4444;
-        }
-
-        .job-boards-status {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-            gap: 16px;
-        }
-
-        .board-card {
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-        }
-
-        .board-card h3 {
-            margin-bottom: 12px;
-            font-size: 18px;
-        }
-
-        .board-card p {
-            color: var(--muted);
-            font-size: 14px;
-            margin: 8px 0;
-        }
-
-        .status {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 12px;
-            margin-bottom: 8px;
-        }
-
-        .status.active {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-        }
-
-        .status.inactive {
-            background: rgba(148, 163, 184, 0.1);
-            color: var(--muted);
-        }
-
-        .platform-toggle {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .platform-toggle:hover {
-            border-color: rgba(139, 92, 246, 0.5);
-            background: rgba(139, 92, 246, 0.05);
-        }
-
-        .platform-toggle input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-
-        .platform-info {
-            flex: 1;
-        }
-
-        .platform-name {
-            font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .platform-coverage {
-            color: var(--muted);
-            font-size: 12px;
-        }
-    </style>
+<style>
+.settings-main { padding: 20px 24px; gap: 16px; }
+.settings-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+.settings-section h2 { font-size: 14px; margin-bottom: 6px; }
+.settings-section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-3);
+  margin: 14px 0 8px;
+}
+.muted { color: var(--text-2); font-size: 12px; margin-bottom: 12px; }
+.row-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.grow { flex: 1; min-width: 260px; }
+.compact { width: 180px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.locations-grid { display: flex; flex-direction: column; gap: 8px; }
+.location-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.location-item.disabled { opacity: 0.6; }
+.location-name { font-weight: 600; font-size: 12px; color: var(--text); }
+.location-country { color: var(--text-3); font-size: 10px; margin-top: 2px; }
+.location-actions { display: flex; gap: 6px; }
+.work-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.toggle-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--bg-2);
+  cursor: pointer;
+  font-size: 12px;
+}
+.toggle-card input { width: 16px; height: 16px; }
+</style>
 </body>
 </html>

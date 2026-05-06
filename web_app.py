@@ -3,13 +3,9 @@
 JobHunter Web Dashboard
 Simple web interface for managing job applications
 """
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from sqlalchemy import desc
 from src.database.models import Database, Job, SearchHistory
-from src.applying.cover_letter_pdf import CoverLetterPDFGenerator
-from src.applying.gpt4_cover_letter import generate_gpt4_cover_letter
-from src.scoring.goldcoast_scorer import GoldCoastJobScorer
-from src.scrapers.seek import SeekScraper
 from datetime import datetime
 from loguru import logger
 import threading
@@ -20,34 +16,39 @@ app = Flask(__name__)
 db = Database()
 scrape_lock = threading.Lock()
 scrape_running = False
-goldcoast_scorer = GoldCoastJobScorer()
-seek_scraper = SeekScraper()  # Use existing Selenium-based Seek scraper
+CONFIG_DIR = os.path.join(os.path.dirname(__file__), 'config')
+
+
+def _read_json_file(path: str, default_value):
+    """Read JSON file safely with fallback."""
+    try:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed reading JSON file {path}: {e}")
+    return default_value
+
+
+def _write_json_file(path: str, data) -> None:
+    """Write JSON file safely."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
 
 
 @app.route('/')
 def index():
     """Main dashboard - shows all jobs"""
     session = db.get_session()
-    mode = request.args.get('mode', 'tech')  # 'tech' or 'goldcoast'
-    
     try:
-        # Get jobs based on mode
-        if mode == 'goldcoast':
-            # Filter for Gold Coast jobs
-            all_jobs = session.query(Job)\
-                .filter(Job.applied == False)\
-                .filter((Job.location.contains('Gold Coast')) | (Job.source == 'seek_goldcoast'))\
-                .order_by(Job.fit_score.desc(), Job.created_at.desc())\
-                .limit(200)\
-                .all()
-        else:
-            # Tech jobs (existing logic)
-            all_jobs = session.query(Job)\
-                .filter(Job.applied == False)\
-                .filter(Job.source != 'seek_goldcoast')\
-                .order_by(Job.fit_score.desc(), Job.created_at.desc())\
-                .limit(200)\
-                .all()
+        # Get jobs grouped by priority tiers
+        # Only show NEW jobs (not applied) by default
+        all_jobs = session.query(Job)\
+            .filter(Job.applied == False)\
+            .order_by(Job.fit_score.desc(), Job.created_at.desc())\
+            .limit(200)\
+            .all()
         
         # Group jobs by score tiers (fit_score is already a float, not a SQLAlchemy column at this point)
         top_matches = []
@@ -156,41 +157,6 @@ def add_interview():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
-@app.route('/api/job/<int:job_id>')
-def get_job_details(job_id):
-    """Get full details for a specific job"""
-    try:
-        session = db.get_session()
-        try:
-            job = session.query(Job).filter(Job.id == job_id).first()
-            if not job:
-                return jsonify({'success': False, 'error': 'Job not found'}), 404
-            
-            job_details = {
-                'id': job.id,
-                'title': job.title,
-                'company': job.company,
-                'url': job.url,
-                'description': job.description,
-                'location': job.location,
-                'remote': job.remote,
-                'fit_score': float(job.fit_score) if job.fit_score else 0.0,
-                'reasoning': job.reasoning,
-                'tech_matches': job.tech_matches,
-                'industry_matches': job.industry_matches,
-                'role_matches': job.role_matches,
-                'posted_date': job.posted_date,
-                'source': job.source
-            }
-            
-            return jsonify({'success': True, 'job': job_details})
-        finally:
-            session.close()
-    except Exception as e:
-        logger.error(f"Error getting job details: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
 @app.route('/api/cover_letter/<int:job_id>')
 def get_cover_letter(job_id):
     """Get cover letter for a job"""
@@ -265,281 +231,6 @@ def get_cover_letter(job_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/cover_letter/<int:job_id>/pdf')
-def download_cover_letter_pdf(job_id):
-    """Download or preview cover letter as PDF"""
-    try:
-        # Check if specific filename is requested (for preview)
-        filename = request.args.get('filename')
-        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
-        
-        if filename:
-            # Direct preview of specific PDF file
-            pdf_path = os.path.join(applications_dir, filename)
-            if os.path.exists(pdf_path):
-                return send_file(
-                    pdf_path,
-                    mimetype='application/pdf',
-                    as_attachment=False  # Display in browser instead of download
-                )
-            else:
-                return jsonify({'success': False, 'error': 'PDF file not found'}), 404
-        
-        # Otherwise, find and generate PDF for this job
-        # First get the job details from database to find source_id
-        session = db.get_session()
-        try:
-            job = session.query(Job).filter(Job.id == job_id).first()
-            if not job:
-                return jsonify({'success': False, 'error': 'Job not found'}), 404
-            
-            source_id = job.source_id
-            company = job.company
-            title = job.title
-        finally:
-            session.close()
-        
-        # Strategy: Look through metadata files to find the matching job
-        cover_letter_files = []
-        
-        for filename in os.listdir(applications_dir):
-            if not filename.endswith('_metadata.json'):
-                continue
-            
-            metadata_path = os.path.join(applications_dir, filename)
-            try:
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                
-                # Check if this metadata matches our job
-                job_data = metadata.get('job', {})
-                meta_source_id = job_data.get('id') or job_data.get('job_id')
-                meta_company = job_data.get('company', '')
-                meta_title = job_data.get('title', '')
-                
-                # Match if source_id matches OR (company and title match)
-                is_match = False
-                if source_id is not None and meta_source_id and str(source_id) == str(meta_source_id):
-                    is_match = True
-                elif company.lower() in meta_company.lower() and title.lower() in meta_title.lower():
-                    is_match = True
-                
-                if is_match:
-                    # Found a match! Get the corresponding cover letter
-                    cover_letter_file = metadata_path.replace('_metadata.json', '_cover_letter.txt')
-                    if os.path.exists(cover_letter_file):
-                        cover_letter_files.append((cover_letter_file, os.path.getmtime(cover_letter_file)))
-                        
-            except Exception as e:
-                logger.debug(f"Error reading metadata {filename}: {e}")
-                continue
-        
-        if not cover_letter_files:
-            return jsonify({'success': False, 'error': 'No cover letter found for this job'}), 404
-        
-        # Get the most recent one if multiple matches
-        latest_file = max(cover_letter_files, key=lambda x: x[1])[0]
-        
-        # Read cover letter text
-        with open(latest_file, 'r') as f:
-            cover_letter_text = f.read()
-        
-        # Generate PDF
-        pdf_generator = CoverLetterPDFGenerator()
-        pdf_path = latest_file.replace('_cover_letter.txt', '_cover_letter.pdf')
-        
-        pdf_generator.generate_pdf(
-            cover_letter_text=cover_letter_text,
-            job_title=title,
-            company_name=company,
-            output_path=pdf_path
-        )
-        
-        # Send the PDF file
-        return send_file(
-            pdf_path,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f"cover_letter_{company.replace(' ', '_')}_{title.replace(' ', '_')[:30]}.pdf"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF cover letter: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/cover_letter/generate/<int:job_id>', methods=['POST'])
-def generate_cover_letter(job_id):
-    """Generate a new cover letter on-demand for a job"""
-    try:
-        # Get job details from database
-        session = db.get_session()
-        try:
-            job = session.query(Job).filter(Job.id == job_id).first()
-            if not job:
-                return jsonify({'success': False, 'error': 'Job not found'}), 404
-            
-            # Prepare job data for cover letter generation
-            job_data = {
-                'company': job.company,
-                'title': job.title,
-                'description': job.description or '',
-                'location': job.location or '',
-                'id': job.source_id or job.id
-            }
-            
-            score_data = {
-                'fit_score': float(job.fit_score) if job.fit_score else 0.0,
-                'reasoning': job.reasoning or '',
-                'matches': {
-                    'tech': job.tech_matches or []
-                }
-            }
-        finally:
-            session.close()
-        
-        # Generate cover letter using GPT-4
-        logger.info(f"Generating cover letter for job {job_id}: {job_data['company']} - {job_data['title']}")
-        cover_letter_text = generate_gpt4_cover_letter(job_data, score_data)
-        
-        # Save cover letter to applications directory
-        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
-        os.makedirs(applications_dir, exist_ok=True)
-        
-        # Create filename using timestamp and job identifier
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        safe_company = job_data['company'].replace(' ', '-').replace('/', '-')[:50]
-        safe_title = job_data['title'].replace(' ', '-').replace('/', '-')[:50]
-        identifier = f"{timestamp}_{job_data['id']}_{safe_company}_{safe_title}"
-        
-        cover_letter_file = os.path.join(applications_dir, f"app_{identifier}_cover_letter.txt")
-        metadata_file = os.path.join(applications_dir, f"app_{identifier}_metadata.json")
-        
-        # Save cover letter text
-        with open(cover_letter_file, 'w') as f:
-            f.write(cover_letter_text)
-        
-        # Save metadata for matching later
-        metadata = {
-            'job': job_data,
-            'generated_at': datetime.now().isoformat(),
-            'type': 'cover_letter'
-        }
-        with open(metadata_file, 'w') as f:
-            json.dump(metadata, f, indent=2)
-        
-        logger.info(f"Saved cover letter to {cover_letter_file}")
-        
-        return jsonify({
-            'success': True,
-            'cover_letter': cover_letter_text,
-            'filename': os.path.basename(cover_letter_file),
-            'message': 'Cover letter generated successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error generating cover letter: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/cover_letter/save/<int:job_id>', methods=['POST'])
-def save_cover_letter(job_id):
-    """Save edited cover letter text"""
-    try:
-        data = request.get_json()
-        if not data or 'cover_letter' not in data:
-            return jsonify({'success': False, 'error': 'No cover letter text provided'}), 400
-        
-        cover_letter_text = data['cover_letter']
-        
-        # Get job details from database
-        session = db.get_session()
-        try:
-            job = session.query(Job).filter(Job.id == job_id).first()
-            if not job:
-                return jsonify({'success': False, 'error': 'Job not found'}), 404
-            
-            source_id = job.source_id
-            company = job.company
-            title = job.title
-        finally:
-            session.close()
-        
-        # Find existing cover letter file or create new one
-        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
-        os.makedirs(applications_dir, exist_ok=True)
-        
-        # Look for existing cover letter file
-        cover_letter_file = None
-        for filename in os.listdir(applications_dir):
-            if not filename.endswith('_metadata.json'):
-                continue
-            
-            metadata_path = os.path.join(applications_dir, filename)
-            try:
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                
-                job_data = metadata.get('job', {})
-                meta_source_id = job_data.get('id') or job_data.get('job_id')
-                meta_company = job_data.get('company', '')
-                meta_title = job_data.get('title', '')
-                
-                # Match if source_id matches OR (company and title match)
-                is_match = False
-                if source_id is not None and meta_source_id and str(source_id) == str(meta_source_id):
-                    is_match = True
-                elif company.lower() in meta_company.lower() and title.lower() in meta_title.lower():
-                    is_match = True
-                
-                if is_match:
-                    cover_letter_file = metadata_path.replace('_metadata.json', '_cover_letter.txt')
-                    break
-                    
-            except Exception as e:
-                logger.debug(f"Error reading metadata {filename}: {e}")
-                continue
-        
-        # If no existing file, create new one
-        if not cover_letter_file or not os.path.exists(cover_letter_file):
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            safe_company = company.replace(' ', '-').replace('/', '-')[:50]
-            safe_title = title.replace(' ', '-').replace('/', '-')[:50]
-            identifier = f"{timestamp}_{source_id or job_id}_{safe_company}_{safe_title}"
-            
-            cover_letter_file = os.path.join(applications_dir, f"app_{identifier}_cover_letter.txt")
-            metadata_file = os.path.join(applications_dir, f"app_{identifier}_metadata.json")
-            
-            # Save metadata
-            metadata = {
-                'job': {
-                    'id': source_id,
-                    'company': company,
-                    'title': title
-                },
-                'saved_at': datetime.now().isoformat(),
-                'type': 'cover_letter'
-            }
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
-        
-        # Save the cover letter text
-        with open(cover_letter_file, 'w') as f:
-            f.write(cover_letter_text)
-        
-        logger.info(f"Saved edited cover letter to {cover_letter_file}")
-        
-        return jsonify({
-            'success': True,
-            'message': 'Cover letter saved successfully',
-            'filename': os.path.basename(cover_letter_file)
-        })
-        
-    except Exception as e:
-        logger.error(f"Error saving cover letter: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
 @app.route('/applied')
 def applied_jobs():
     """View all applied jobs"""
@@ -578,6 +269,137 @@ def settings():
     return render_template('settings.html')
 
 
+# ── Setup / Onboarding ────────────────────────────────────────────────────────
+@app.route('/setup')
+def setup():
+    """First-time setup wizard — upload CV and build user profile."""
+    return render_template('setup.html')
+
+
+@app.route('/api/setup/ingest_cv', methods=['POST'])
+def setup_ingest_cv():
+    """Parse uploaded CV PDF and extract a structured profile via Kimi."""
+    import tempfile
+    try:
+        f = request.files.get('cv')
+        if not f or not f.filename.lower().endswith('.pdf'):
+            return jsonify({'success': False, 'error': 'Please upload a PDF file'}), 400
+
+        # Save to temp file and parse
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+
+        # Extract raw text from PDF
+        cv_text = ''
+        try:
+            import pdfplumber
+            with pdfplumber.open(tmp_path) as pdf:
+                cv_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+        except Exception:
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(tmp_path)
+                cv_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'Could not parse PDF: {e}'}), 400
+        finally:
+            import os as _os; _os.unlink(tmp_path)
+
+        if len(cv_text.strip()) < 100:
+            return jsonify({'success': False, 'error': 'Could not extract enough text from PDF. Try a text-based PDF.'}), 400
+
+        # Call Kimi to extract structured profile
+        from src.scoring.ai_scorer import _kimi_client, KIMI_AVAILABLE
+        if not KIMI_AVAILABLE or not _kimi_client:
+            return jsonify({'success': False, 'error': 'Kimi AI not configured (check KIMI_API_KEY)'}), 503
+
+        system_prompt = """You are a CV parser. Extract structured information from the CV text below and return ONLY a valid JSON object — no markdown, no explanation.
+
+The JSON must have these keys:
+{
+  "name": "Full Name",
+  "email": "email@example.com",
+  "phone": "+1 555 000 0000",
+  "linkedin": "https://linkedin.com/in/...",
+  "portfolio": "https://...",
+  "location": "City, Country",
+  "summary": "2-3 sentence professional summary derived from the CV",
+  "skills": {
+    "core": ["skill1", "skill2", ...],
+    "strong": ["skill3", "skill4", ...],
+    "familiar": []
+  },
+  "roles": ["Target Role 1", "Target Role 2"],
+  "industries": ["Industry 1", "Industry 2"],
+  "experience": [
+    {
+      "title": "Job Title",
+      "company": "Company Name",
+      "period": "2023 – present",
+      "location": "City, Country",
+      "bullets": ["Achievement 1", "Achievement 2", "Achievement 3"]
+    }
+  ],
+  "education": {
+    "degree": "B.S. Computer Science",
+    "university": "University Name",
+    "graduation": "2023",
+    "gpa": ""
+  },
+  "visa_notes": "Citizen / PR / requires sponsorship",
+  "min_salary": 0
+}
+
+Infer roles and industries from the experience and skills. Keep bullets specific and technical. Return ONLY the JSON."""
+
+        response = _kimi_client.chat.completions.create(
+            model='moonshot-v1-32k',
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user',   'content': f'CV TEXT:\n\n{cv_text[:12000]}'},
+            ],
+            temperature=0.1,
+            max_tokens=2500,
+        )
+        raw = (response.choices[0].message.content or '').strip()
+
+        # Strip markdown code fences if present
+        if raw.startswith('```'):
+            raw = '\n'.join(raw.split('\n')[1:])
+        if raw.endswith('```'):
+            raw = raw[:raw.rfind('```')]
+
+        import json as _json
+        profile = _json.loads(raw.strip())
+        return jsonify({'success': True, 'profile': profile})
+
+    except Exception as e:
+        logger.error(f'setup_ingest_cv error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/setup/save_profile', methods=['POST'])
+def setup_save_profile():
+    """Save the reviewed profile JSON to config/user_profile.json."""
+    import json as _json
+    try:
+        profile = request.get_json(silent=True) or {}
+        if not profile.get('name'):
+            return jsonify({'success': False, 'error': 'Profile must include at least a name'}), 400
+
+        profile_path = os.path.join(CONFIG_DIR, 'user_profile.json')
+        with open(profile_path, 'w', encoding='utf-8') as fh:
+            _json.dump(profile, fh, indent=2, ensure_ascii=False)
+
+        logger.info(f'User profile saved to {profile_path}')
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f'setup_save_profile error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+
 @app.route('/api/update_locations', methods=['POST'])
 def update_locations():
     """Update scraping locations"""
@@ -586,11 +408,8 @@ def update_locations():
         locations = data.get('locations', [])
         
         # Store locations in a config file
-        config_path = os.path.join(os.path.dirname(__file__), 'config', 'locations.json')
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
-        
-        with open(config_path, 'w') as f:
-            json.dump(locations, f, indent=2)
+        config_path = os.path.join(CONFIG_DIR, 'locations.json')
+        _write_json_file(config_path, locations)
         
         return jsonify({'success': True, 'message': 'Locations updated'})
     except Exception as e:
@@ -602,25 +421,23 @@ def update_locations():
 def get_locations():
     """Get current scraping locations"""
     try:
-        config_path = os.path.join(os.path.dirname(__file__), 'config', 'locations.json')
-        
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                locations = json.load(f)
-        else:
-            # Return default locations
-            locations = [
-                {'name': 'New York, NY', 'country': 'US', 'enabled': True},
-                {'name': 'Los Angeles, CA', 'country': 'US', 'enabled': True},
-                {'name': 'San Francisco, CA', 'country': 'US', 'enabled': True},
-                {'name': 'Seattle, WA', 'country': 'US', 'enabled': True},
-                {'name': 'Austin, TX', 'country': 'US', 'enabled': True},
-                {'name': 'Boston, MA', 'country': 'US', 'enabled': True},
-                {'name': 'Remote', 'country': 'US', 'enabled': True},
-                {'name': 'Melbourne VIC', 'country': 'AU', 'enabled': False},
-                {'name': 'Sydney NSW', 'country': 'AU', 'enabled': False},
-                {'name': 'Brisbane QLD', 'country': 'AU', 'enabled': False}
-            ]
+        config_path = os.path.join(CONFIG_DIR, 'locations.json')
+        # Return default locations
+        defaults = [
+            {'name': 'New York, NY', 'country': 'US', 'enabled': False},
+            {'name': 'Los Angeles, CA', 'country': 'US', 'enabled': False},
+            {'name': 'San Francisco, CA', 'country': 'US', 'enabled': False},
+            {'name': 'Seattle, WA', 'country': 'US', 'enabled': False},
+            {'name': 'Austin, TX', 'country': 'US', 'enabled': False},
+            {'name': 'Boston, MA', 'country': 'US', 'enabled': False},
+            {'name': 'Remote', 'country': 'US', 'enabled': True},
+            {'name': 'Freelance', 'country': 'GLOBAL', 'enabled': True},
+            {'name': 'Melbourne VIC', 'country': 'AU', 'enabled': True},
+            {'name': 'Sydney NSW', 'country': 'AU', 'enabled': True},
+            {'name': 'Brisbane QLD', 'country': 'AU', 'enabled': True},
+            {'name': 'Gold Coast QLD', 'country': 'AU', 'enabled': True}
+        ]
+        locations = _read_json_file(config_path, defaults)
         
         return jsonify({'success': True, 'locations': locations})
     except Exception as e:
@@ -635,11 +452,8 @@ def update_auto_submit():
         data = request.get_json(silent=True) or {}
         
         # Store settings in config file
-        config_path = os.path.join(os.path.dirname(__file__), 'config', 'auto_submit.json')
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
-        
-        with open(config_path, 'w') as f:
-            json.dump(data, f, indent=2)
+        config_path = os.path.join(CONFIG_DIR, 'auto_submit.json')
+        _write_json_file(config_path, data)
         
         logger.info(f"Auto-submit settings updated: {data}")
         return jsonify({'success': True, 'message': 'Auto-submit settings updated'})
@@ -652,129 +466,23 @@ def update_auto_submit():
 def get_auto_submit():
     """Get current auto-submit settings"""
     try:
-        config_path = os.path.join(os.path.dirname(__file__), 'config', 'auto_submit.json')
-        
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                settings = json.load(f)
-        else:
-            # Return default settings
-            settings = {
-                'enabled': False,
-                'reviewMode': True,
-                'platforms': {
-                    'greenhouse': True,
-                    'lever': True,
-                    'email': True,
-                    'workday': False
-                }
+        config_path = os.path.join(CONFIG_DIR, 'auto_submit.json')
+        # Return default settings
+        defaults = {
+            'enabled': False,
+            'reviewMode': True,
+            'platforms': {
+                'greenhouse': True,
+                'lever': True,
+                'email': True,
+                'workday': False
             }
+        }
+        settings = _read_json_file(config_path, defaults)
         
         return jsonify({'success': True, 'settings': settings})
     except Exception as e:
         logger.error(f"Error getting auto-submit settings: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/prepare_application/<int:job_id>', methods=['POST'])
-def prepare_application(job_id):
-    """
-    Prepare application for review before auto-submit
-    1. Generate cover letter if needed
-    2. Generate PDF
-    3. Return PDF path for user review
-    """
-    try:
-        session = db.get_session()
-        try:
-            job = session.query(Job).filter(Job.id == job_id).first()
-            if not job:
-                return jsonify({'success': False, 'error': 'Job not found'}), 404
-            
-            # Prepare job and score data
-            job_data = {
-                'title': job.title,
-                'company': job.company,
-                'description': job.description,
-                'url': job.url
-            }
-            
-            score_data = {
-                'fit_score': float(job.fit_score) if job.fit_score else 0.0,
-                'reasoning': job.reasoning,
-                'matches': {
-                    'tech': job.tech_matches.split(',') if job.tech_matches else []
-                }
-            }
-        finally:
-            session.close()
-        
-        # Check if cover letter already exists
-        applications_dir = os.path.join(os.path.dirname(__file__), 'applications')
-        os.makedirs(applications_dir, exist_ok=True)
-        
-        # Find existing cover letter or generate new one
-        cover_letter_text = None
-        cover_letter_files = []
-        
-        for filename in os.listdir(applications_dir):
-            if filename.endswith('_cover_letter.txt') and str(job_id) in filename:
-                cover_letter_files.append(filename)
-        
-        if cover_letter_files:
-            # Use most recent cover letter
-            cover_letter_files.sort(reverse=True)
-            cover_letter_path = os.path.join(applications_dir, cover_letter_files[0])
-            with open(cover_letter_path, 'r') as f:
-                cover_letter_text = f.read()
-            logger.info(f"Found existing cover letter: {cover_letter_files[0]}")
-        else:
-            # Generate new cover letter
-            logger.info(f"Generating new cover letter for job {job_id}")
-            from src.applying.gpt4_cover_letter import generate_gpt4_cover_letter
-            
-            cover_letter_text = generate_gpt4_cover_letter(job_data, score_data)
-            
-            # Save the generated cover letter
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            cover_letter_filename = f"app_{timestamp}_{job_id}_cover_letter.txt"
-            cover_letter_path = os.path.join(applications_dir, cover_letter_filename)
-            
-            with open(cover_letter_path, 'w') as f:
-                f.write(cover_letter_text)
-            
-            logger.info(f"Saved cover letter: {cover_letter_filename}")
-        
-        # Generate PDF
-        from src.applying.cover_letter_pdf import CoverLetterPDFGenerator
-        
-        pdf_generator = CoverLetterPDFGenerator()
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        pdf_filename = f"app_{timestamp}_{job_id}_cover_letter.pdf"
-        pdf_path = os.path.join(applications_dir, pdf_filename)
-        
-        pdf_generator.generate_pdf(
-            cover_letter_text=cover_letter_text,
-            company_name=job.company,
-            job_title=job.title,
-            output_path=pdf_path
-        )
-        
-        logger.info(f"Generated PDF: {pdf_filename}")
-        
-        return jsonify({
-            'success': True,
-            'cover_letter': cover_letter_text,
-            'pdf_filename': pdf_filename,
-            'job': {
-                'id': job_id,
-                'title': job.title,
-                'company': job.company
-            }
-        })
-        
-    except Exception as e:
-        logger.error(f"Error preparing application: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -964,172 +672,10 @@ def _start_scrape_job():
 @app.route('/api/run_scrape', methods=['POST'])
 def run_scrape():
     """Trigger a background scrape run"""
-    mode = request.args.get('mode', 'tech')  # 'tech' or 'goldcoast'
-    
-    if mode == 'goldcoast':
-        # Run Gold Coast scraper
-        started = _start_goldcoast_scrape()
-    else:
-        # Run regular tech job scraper
-        started = _start_scrape_job()
-    
+    started = _start_scrape_job()
     if not started:
         return jsonify({'success': False, 'error': 'Scrape already running'}), 409
-    return jsonify({'success': True, 'message': f'{mode.title()} scrape started'}), 202
-
-
-def _start_goldcoast_scrape():
-    """Start Gold Coast job scraping in background thread"""
-    global scrape_running
-    
-    if scrape_running:
-        return False
-    
-    def scrape_goldcoast_jobs():
-        global scrape_running
-        scrape_running = True
-        
-        try:
-            logger.info("Starting Gold Coast job scrape...")
-            
-            # Expanded Gold Coast lifestyle job search terms
-            gold_coast_terms = [
-                # Wellness & Retreats
-                'wellness retreat',
-                'spa therapist',
-                'yoga instructor',
-                'massage therapist',
-                'wellness coordinator',
-                'retreat coordinator',
-                # Fitness & Sport
-                'personal trainer',
-                'fitness instructor',
-                'pilates instructor',
-                'tennis coach',
-                'gym instructor',
-                'hiking guide',
-                'surf instructor',
-                'sports coach',
-                'recreation officer',
-                # Boutique Hospitality
-                'boutique hotel',
-                'concierge casual',
-                'guest services',
-                'hotel casual',
-                'reception casual',
-                # Food & Beverage
-                'barista casual',
-                'cafe casual',
-                'bartender casual',
-                'waiter casual',
-                'kitchen hand',
-                # Lifestyle & Creative
-                'gallery assistant',
-                'events casual',
-                'tourism casual',
-                'outdoor guide',
-                'beach club'
-            ]
-            
-            # Expanded Gold Coast region locations (from Byron Bay down to Gold Coast)
-            gold_coast_locations = [
-                # Northern NSW (Byron area)
-                "Byron Bay NSW",
-                "Brunswick Heads NSW",
-                "Suffolk Park NSW",
-                "Bangalow NSW",
-                # Northern Gold Coast
-                "Tweed Heads NSW",
-                "Kingscliff NSW",
-                "Cabarita Beach NSW",
-                # Gold Coast Hinterland
-                "Tamborine Mountain QLD",
-                "Mount Tamborine QLD",
-                # Gold Coast Main Areas
-                "Gold Coast QLD",
-                "Burleigh Heads QLD",
-                "Mermaid Beach QLD",
-                "Broadbeach QLD",
-                "Currumbin QLD",
-                "Palm Beach QLD",
-                "Coolangatta QLD"
-            ]
-            
-            # Use existing SeekScraper with expanded terms and locations
-            all_jobs = []
-            
-            # Search more locations with more terms (10 terms per location)
-            for location in gold_coast_locations[:8]:  # Focus on top 8 locations
-                logger.info(f"Searching {location}...")
-                jobs = seek_scraper.search_jobs(gold_coast_terms[:10], location=location)
-                all_jobs.extend(jobs)
-                
-                # Get more jobs - aim for 100-150 total
-                if len(all_jobs) >= 150:
-                    break
-            
-            jobs = all_jobs[:150]  # Limit to 150 total
-            
-            session = db.get_session()
-            new_jobs_count = 0
-            
-            for job_data in jobs:
-                try:
-                    # Check if job already exists
-                    existing = session.query(Job).filter(Job.url == job_data['url']).first()
-                    if existing:
-                        continue
-                    
-                    # Fetch full description for new jobs only (more efficient)
-                    logger.debug(f"Fetching full description for: {job_data['title']}")
-                    full_description = seek_scraper.fetch_single_job_description(job_data['url'])
-                    
-                    # Use full description if fetched, otherwise use snippet
-                    description = full_description if full_description and len(full_description) > 100 else job_data['description']
-                    
-                    # Score the job with Gold Coast scorer using full description
-                    result = goldcoast_scorer.score_job({
-                        'title': job_data['title'],
-                        'company': job_data['company'],
-                        'description': description,
-                        'location': job_data['location']
-                    })
-                    
-                    # Create job entry
-                    new_job = Job(
-                        title=job_data['title'],
-                        company=job_data['company'],
-                        location=job_data['location'],
-                        description=description,  # Use full description
-                        url=job_data['url'],
-                        source='seek_goldcoast',
-                        source_id=job_data.get('source_id', job_data['url']),
-                        fit_score=result['fit_score'],
-                        reasoning=result['reasoning'],
-                        remote=False,
-                        applied=False
-                    )
-                    
-                    session.add(new_job)
-                    new_jobs_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"Error processing Gold Coast job: {e}")
-                    continue
-            
-            session.commit()
-            session.close()
-            
-            logger.info(f"Gold Coast scrape complete: {new_jobs_count} new jobs added")
-            
-        except Exception as e:
-            logger.error(f"Gold Coast scrape failed: {e}")
-        finally:
-            scrape_running = False
-    
-    thread = threading.Thread(target=scrape_goldcoast_jobs, daemon=True)
-    thread.start()
-    return True
+    return jsonify({'success': True, 'message': 'Scrape started'}), 202
 
 
 @app.route('/api/status', methods=['GET'])
@@ -1167,6 +713,183 @@ def get_recent_jobs():
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         session.close()
+
+
+@app.route('/api/get_search_preferences', methods=['GET'])
+def get_search_preferences():
+    """Get search preferences for work type toggles."""
+    try:
+        config_path = os.path.join(CONFIG_DIR, 'search_preferences.json')
+        defaults = {
+            'work_types': {
+                'remote': True,
+                'onsite': True,
+                'hybrid': True
+            }
+        }
+        prefs = _read_json_file(config_path, defaults)
+        return jsonify({'success': True, 'preferences': prefs})
+    except Exception as e:
+        logger.error(f"Error getting search preferences: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/update_search_preferences', methods=['POST'])
+def update_search_preferences():
+    """Update search preferences for work type toggles."""
+    try:
+        data = request.get_json(silent=True) or {}
+        work_types = data.get('work_types', {})
+        normalized = {
+            'work_types': {
+                'remote': bool(work_types.get('remote', True)),
+                'onsite': bool(work_types.get('onsite', True)),
+                'hybrid': bool(work_types.get('hybrid', True))
+            }
+        }
+        # Ensure at least one work type is active.
+        if not any(normalized['work_types'].values()):
+            return jsonify({'success': False, 'error': 'At least one work type must be enabled'}), 400
+
+        config_path = os.path.join(CONFIG_DIR, 'search_preferences.json')
+        _write_json_file(config_path, normalized)
+        return jsonify({'success': True, 'message': 'Search preferences updated', 'preferences': normalized})
+    except Exception as e:
+        logger.error(f"Error updating search preferences: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── Generate CV for a specific job ────────────────────────────────────────────
+@app.route('/api/generate_cv/<int:job_id>', methods=['POST'])
+def generate_cv_for_job(job_id):
+    """Trigger CV + cover letter generation for a single job."""
+    try:
+        from src.database.models import Job
+        from src.applying.applicator import JobApplicator
+
+        session = db.get_session()
+        try:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return jsonify({'success': False, 'error': 'Job not found'}), 404
+
+            job_data = {
+                'id':          job.id,
+                'title':       job.title,
+                'company':     job.company,
+                'url':         job.url,
+                'description': job.description or '',
+                'location':    job.location or '',
+                'source':      job.source or '',
+                'source_id':   job.source_id or '',
+            }
+            score_result = {
+                'fit_score':    float(job.fit_score or 0),
+                'visa_status':  job.visa_status or 'none',
+                'seniority_ok': True,
+                'location_ok':  True,
+                'reasoning':    job.reasoning or '',
+            }
+        finally:
+            session.close()
+
+        applicator = JobApplicator()
+        application = applicator.prepare_application(job_data, score_result)
+        if not application:
+            return jsonify({'success': False, 'error': 'prepare_application returned None — score too low or not eligible'}), 400
+
+        return jsonify({
+            'success': True,
+            'message': f"CV generated for {job_data['title']} @ {job_data['company']}",
+            'cover_letter_preview': (application.get('cover_letter') or '')[:300],
+        })
+
+    except Exception as e:
+        logger.error(f"generate_cv_for_job error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── Application Q&A Assistant ─────────────────────────────────────────────────
+@app.route('/api/application_assistant', methods=['POST'])
+def application_assistant():
+    """
+    Kimi-powered chatbot that answers application questions in Harvey's voice.
+    POST body: { job_title, job_company, job_description, question }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        question      = (data.get('question') or '').strip()
+        job_title     = (data.get('job_title') or '').strip()
+        job_company   = (data.get('job_company') or '').strip()
+        job_desc      = (data.get('job_description') or '')[:3000]
+
+        if not question:
+            return jsonify({'success': False, 'error': 'No question provided'}), 400
+
+        # Build profile context once
+        from src.profile import HARVEY_PROFILE
+        from src.scoring.ai_scorer import _kimi_client, KIMI_AVAILABLE
+
+        if not KIMI_AVAILABLE or not _kimi_client:
+            return jsonify({'success': False, 'error': 'Kimi AI not configured (check KIMI_API_KEY)'}), 503
+
+        # Construct Harvey's background blurb
+        profile = HARVEY_PROFILE
+        exp_lines = []
+        for e in profile.get('experience', [])[:4]:
+            bullets = ' '.join(e.get('bullets', [])[:2])
+            exp_lines.append(f"- {e['title']} at {e['company']} ({e.get('period','')}): {bullets[:200]}")
+
+        skills_flat = []
+        for cat in profile.get('skills', {}).values():
+            skills_flat.extend(cat)
+
+        profile_text = f"""Candidate: Harvey Houlahan
+Location: Byron Bay, NSW, Australia (AU citizen — no visa issues for AU/EU/CA/Remote; E-3 for US)
+Summary: {profile.get('summary', '')}
+
+Experience:
+{chr(10).join(exp_lines)}
+
+Key skills: {', '.join(skills_flat[:40])}
+Industries: {', '.join(profile.get('industries', [])[:12])}
+"""
+
+        system_prompt = f"""You are Harvey Houlahan's personal application assistant.
+
+Your ONLY job is to write first-person answers to job application questions, in Harvey's voice —
+confident, technically precise, concise (2–4 sentences per answer unless more is asked), and genuine.
+
+Never be generic. Ground every answer in Harvey's actual experience below.
+Never use phrases like "As an AI" or "I don't have personal experience".
+Write as if you ARE Harvey answering directly.
+
+HARVEY'S PROFILE:
+{profile_text}
+
+JOB CONTEXT:
+Title: {job_title}
+Company: {job_company}
+Description excerpt: {job_desc[:1000]}
+"""
+
+        user_msg = f"Application question: {question}\n\nWrite Harvey's answer:"
+
+        response = _kimi_client.chat.completions.create(
+            model="moonshot-v1-8k",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_msg},
+            ],
+            temperature=0.6,
+            max_tokens=500,
+        )
+        answer = (response.choices[0].message.content or '').strip()
+        return jsonify({'success': True, 'answer': answer})
+
+    except Exception as e:
+        logger.error(f"Application assistant error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

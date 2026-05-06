@@ -3,7 +3,7 @@ Seek Jobs scraper - Australia's largest job board
 Built to same standard as LinkedIn/Indeed scrapers
 Supports Melbourne and other Australian locations
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
 from loguru import logger
 from .base import BaseScraper, JobListing
@@ -17,6 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+import undetected_chromedriver as uc
 
 
 class SeekScraper(BaseScraper):
@@ -32,37 +33,39 @@ class SeekScraper(BaseScraper):
         self.user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     
     def _get_driver(self):
-        """Initialize headless Chrome driver"""
+        """Initialize undetected Chrome driver to bypass Cloudflare"""
         if self.driver is None:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument(f'user-agent={self.user_agent}')
-            
-            # Set binary location for Docker
             import os
-            chrome_bin = os.environ.get('CHROME_BIN')
-            if chrome_bin:
-                chrome_options.binary_location = chrome_bin
             
             try:
-                # Use system chromedriver if CHROMEDRIVER_PATH is set (Docker)
+                # Use undetected-chromedriver to bypass Cloudflare
+                chrome_options = uc.ChromeOptions()
+                chrome_options.add_argument('--headless=new')
+                chrome_options.add_argument('--no-sandbox')
+                chrome_options.add_argument('--disable-dev-shm-usage')
+                chrome_options.add_argument('--window-size=1920,1080')
+                
+                # Set binary location for Docker
+                chrome_bin = os.environ.get('CHROME_BIN')
+                if chrome_bin:
+                    chrome_options.binary_location = chrome_bin
+                
+                # Use system chromedriver if available
                 chromedriver_path = os.environ.get('CHROMEDRIVER_PATH')
                 if chromedriver_path and os.path.exists(chromedriver_path):
-                    service = Service(chromedriver_path)
-                    logger.info(f"Using system chromedriver at {chromedriver_path}")
+                    logger.info(f"Using undetected-chrome with system driver at {chromedriver_path}")
+                    self.driver = uc.Chrome(
+                        options=chrome_options,
+                        driver_executable_path=chromedriver_path,
+                        use_subprocess=False
+                    )
                 else:
-                    # Fall back to ChromeDriverManager for local development
-                    service = Service(ChromeDriverManager().install())
-                    logger.info("Using ChromeDriverManager")
+                    logger.info("Using undetected-chrome with auto-download")
+                    self.driver = uc.Chrome(options=chrome_options, use_subprocess=False)
                 
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                logger.info("Seek Chrome driver initialized successfully")
+                logger.info("Seek undetected Chrome driver initialized successfully")
             except Exception as e:
-                logger.error(f"Failed to initialize Chrome driver: {e}")
+                logger.error(f"Failed to initialize undetected Chrome driver: {e}")
                 return None
         return self.driver
     
@@ -81,25 +84,56 @@ class SeekScraper(BaseScraper):
         """
         all_jobs = []
         
-        # Harvey's targeted terms for Australian market
+        # Harvey's comprehensive tech search terms for Australian market (East Coast focus)
         harvey_targeted_terms = [
+            # ML/AI roles (high priority)
             'Machine Learning Engineer',
             'ML Engineer',
             'AI Engineer',
-            'Backend Engineer Python',
-            'Data Engineer Python',
-            'Software Engineer Python',
-            'Full Stack Engineer',
             'Data Scientist',
-            'MLOps Engineer'
+            'Applied Scientist',
+            'MLOps Engineer',
+            'AI Research Engineer',
+            
+            # Backend/Software Engineering
+            'Software Engineer Python',
+            'Backend Engineer',
+            'Python Developer',
+            'Backend Developer Python',
+            'Software Developer Python',
+            
+            # Data Engineering
+            'Data Engineer',
+            'Analytics Engineer',
+            'Data Platform Engineer',
+            
+            # Full Stack (with backend focus)
+            'Full Stack Engineer',
+            'Full Stack Developer Python',
+            
+            # Broader software roles
+            'Software Engineer',
+            'Senior Software Engineer',
+            'Lead Software Engineer',
+            
+            # Tech-specific roles
+            'Platform Engineer',
+            'API Engineer',
+            'Cloud Engineer Python',
+            'DevOps Engineer Python'
         ]
         
         # Use provided terms or Harvey's targeted terms
         terms_to_search = search_terms if search_terms else harvey_targeted_terms
         
-        # Search up to 7 terms for good coverage
-        for term in terms_to_search[:7]:
+        # Search more terms for comprehensive coverage in AU market
+        for idx, term in enumerate(terms_to_search[:12]):  # Increased from 7 to 12
             try:
+                # Add delay between different search terms to avoid rate limiting
+                if idx > 0:
+                    delay = random.uniform(5, 8)
+                    logger.debug(f"Waiting {delay:.1f}s before next search...")
+                    time.sleep(delay)
                 jobs = self._search_single_term(term, location)
                 all_jobs.extend(jobs)
                 logger.info(f"Found {len(jobs)} jobs for '{term}' on Seek")
@@ -152,15 +186,30 @@ class SeekScraper(BaseScraper):
             try:
                 # Use Selenium to load the page
                 driver.get(search_url)
-                time.sleep(random.uniform(2, 4))  # Wait for JS to render
                 
-                # Wait for job cards to load
+                # Much longer wait for Seek - they have heavy JavaScript
+                time.sleep(random.uniform(6, 9))  # Increased from 4-6
+                
+                # Try to detect if we've been blocked
+                page_text = driver.page_source.lower()
+                if 'access denied' in page_text or 'blocked' in page_text or 'captcha' in page_text:
+                    logger.warning(f"Seek may have blocked us - detected anti-bot page")
+                    break
+                
+                # Wait for job cards to load with longer timeout
                 try:
-                    WebDriverWait(driver, 10).until(
+                    WebDriverWait(driver, 30).until(  # Increased from 20
                         EC.presence_of_element_located((By.TAG_NAME, "article"))
                     )
+                    # Extra wait after detection
+                    time.sleep(random.uniform(2, 3))
                 except:
                     logger.warning(f"Timeout waiting for job cards on page {page}")
+                    # Try scrolling to trigger lazy loading
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(3)
+                    driver.execute_script("window.scrollTo(0, 0);")
+                    time.sleep(2)
                 
                 # Get page source after JS rendering
                 html = driver.page_source
@@ -170,15 +219,39 @@ class SeekScraper(BaseScraper):
                 
                 soup = BeautifulSoup(html, 'lxml')
                 
-                # Seek uses article tags with data-job-id attribute
-                job_cards = (
-                    soup.find_all('article', attrs={'data-job-id': True}) or
-                    soup.find_all('article', class_='_1wkzzau0') or
-                    soup.find_all('div', attrs={'data-card-type': 'JobCard'})
-                )
+                # Multiple strategies to find job cards (Seek changes these often)
+                job_cards = []
+                
+                # Strategy 1: article tags with data-job-id
+                job_cards = soup.find_all('article', attrs={'data-job-id': True})
+                
+                # Strategy 2: article with specific classes
+                if not job_cards:
+                    all_articles = soup.find_all('article')
+                    for article in all_articles:
+                        classes = article.get('class')
+                        if classes and '_1wkzzau0' in ' '.join(str(c) for c in classes):
+                            job_cards.append(article)
+                
+                # Strategy 3: div with data-card-type
+                if not job_cards:
+                    job_cards = soup.find_all('div', attrs={'data-card-type': 'JobCard'})
+                
+                # Strategy 4: Look for any article with job-related links
+                if not job_cards:
+                    all_articles = soup.find_all('article')
+                    job_cards = []
+                    for a in all_articles:
+                        link = a.find('a', href=True)
+                        if link and '/job/' in str(link.get('href', '')):
+                            job_cards.append(a)
                 
                 if not job_cards:
-                    logger.warning(f"No job cards found for '{term}' (page {page}) - may have reached end")
+                    logger.warning(f"No job cards found for '{term}' (page {page}) - may have reached end or been blocked")
+                    # Save HTML for debugging
+                    if page == 1:
+                        logger.debug(f"Page title: {soup.title.string if soup.title else 'No title'}")
+                        logger.debug(f"Page contains 'job': {'job' in page_text}")
                     break
                 
                 jobs_on_page = []
@@ -191,14 +264,15 @@ class SeekScraper(BaseScraper):
                         logger.debug(f"Error parsing job card: {e}")
                 
                 if not jobs_on_page:
+                    logger.warning(f"No valid jobs parsed from {len(job_cards)} cards on page {page}")
                     break
                 
                 all_jobs.extend(jobs_on_page)
                 logger.info(f"Page {page}: Parsed {len(jobs_on_page)} valid jobs for '{term}'")
                 
-                # Delay between pages
+                # Longer delay between pages to avoid detection
                 if page_num < 2:
-                    time.sleep(random.uniform(2, 4))
+                    time.sleep(random.uniform(4, 7))  # Increased from 2-4
                     
             except Exception as e:
                 logger.error(f"Error fetching Seek page {page} for '{term}': {e}")
@@ -207,7 +281,7 @@ class SeekScraper(BaseScraper):
         logger.info(f"Total: Parsed {len(all_jobs)} valid jobs for '{term}' across all pages")
         return all_jobs
     
-    def _parse_job_card(self, card) -> JobListing:
+    def _parse_job_card(self, card) -> Optional[JobListing]:
         """Parse a job card from search results"""
         try:
             # Get job ID from data attribute
@@ -349,7 +423,15 @@ class SeekScraper(BaseScraper):
             ]
             
             for tag, attrs in selectors:
-                desc_elem = soup.find(tag, attrs)
+                if 'data-automation' in attrs:
+                    desc_elem = soup.find(tag, attrs={'data-automation': attrs['data-automation']})
+                elif 'class' in attrs:
+                    desc_elem = soup.find(tag, class_=attrs['class'])
+                elif 'id' in attrs:
+                    desc_elem = soup.find(tag, id=attrs['id'])
+                elif 'aria-labelledby' in attrs:
+                    desc_elem = soup.find(tag, attrs={'aria-labelledby': attrs['aria-labelledby']})
+                
                 if desc_elem and len(desc_elem.get_text(strip=True)) > 100:
                     break
             

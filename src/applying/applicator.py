@@ -169,7 +169,7 @@ class JobApplicator:
                 'pdf_path': cv_result.get('pdf_path'),
                 'highlights': cv_result.get('highlights')
             },
-            'cover_letter': None,  # Cover letters are now generated on-demand by user
+            'cover_letter': self._generate_cover_letter(job_data, score_result),
             'applicant': {
                 'name': HARVEY_PROFILE.get('name', 'Harvey J. Houlahan'),
                 'email': HARVEY_PROFILE.get('email', 'harveyhoulahan@outlook.com'),

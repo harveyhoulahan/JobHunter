@@ -1,100 +1,296 @@
-<div class="job-card"
-     data-score="{{ job.fit_score or 0 }}"
-     data-status="{{ job.status or 'new' }}"
-     data-remote="{{ 'true' if job.remote else 'false' }}"
-     data-source="{{ job.source or 'unknown' }}"
-     data-text="{{ (job.title ~ ' ' ~ job.company)|lower }}">
-    
-    <!-- Header with Score Badge -->
-    <div class="job-header">
-        <div class="job-header-content">
-            <div class="job-title">{{ job.title }}</div>
-            <div class="job-company">{{ job.company }}</div>
+{% set score = job.fit_score | int %}
+{% if score >= 82 %}{% set sr_cls = 'sr-high' %}{% elif score >= 65 %}{% set sr_cls = 'sr-mid' %}{% elif score >= 50 %}{% set sr_cls = 'sr-low' %}{% else %}{% set sr_cls = 'sr-poor' %}{% endif %}
+
+{% set visa = job.visa_status | default('none') %}
+{% if visa == 'au_citizen_ok' %}{% set v_cls = 'v-ok' %}{% set v_lbl = 'AU ok' %}
+{% elif visa == 'explicit' %}{% set v_cls = 'v-ok' %}{% set v_lbl = 'Sponsored' %}
+{% elif visa == 'e3_eligible' %}{% set v_cls = 'v-e3' %}{% set v_lbl = 'E-3' %}
+{% elif visa == 'flagged' %}{% set v_cls = 'v-flag' %}{% set v_lbl = 'Flagged' %}
+{% elif visa == 'excluded' or visa == 'no_sponsorship' %}{% set v_cls = 'v-block' %}{% set v_lbl = 'No sponsor' %}
+{% else %}{% set v_cls = 'v-none' %}{% set v_lbl = '?' %}{% endif %}
+
+{% set snr = job.seniority_flag | default('ok') %}
+{% if snr == 'ok' %}{% set s_cls = 's-ok' %}{% set s_lbl = 'IC fit' %}
+{% elif snr == 'senior' %}{% set s_cls = 's-senior' %}{% set s_lbl = 'Senior' %}
+{% elif snr == 'stretch' %}{% set s_cls = 's-str' %}{% set s_lbl = 'Stretch' %}
+{% else %}{% set s_cls = 's-no' %}{% set s_lbl = snr %}{% endif %}
+
+{% set loc_flag = job.location_flag | default('unknown') %}
+{% if loc_flag == 'tier1' or loc_flag == 'primary' %}{% set tp_cls = 'tp1' %}
+{% elif loc_flag == 'remote' %}{% set tp_cls = 'tpR' %}
+{% elif loc_flag == 'tier2' %}{% set tp_cls = 'tp2' %}
+{% else %}{% set tp_cls = 'tp3' %}{% endif %}
+
+{% set tech_tags = job.tech_matches | default([]) %}
+{% set role_tags = job.role_matches | default([]) %}
+{% set indus_tags = job.industry_matches | default([]) %}
+
+{% set src = job.source | default('') %}
+{% if src == 'linkedin' %}{% set src_lbl = 'LI' %}{% set src_cls = 'src-li' %}
+{% elif src == 'builtin' %}{% set src_lbl = 'BI' %}{% set src_cls = 'src-bi' %}
+{% elif src == 'yc_jobs' %}{% set src_lbl = 'YC' %}{% set src_cls = 'src-yc' %}
+{% else %}{% set src_lbl = src[:2]|upper %}{% set src_cls = 'src-oth' %}{% endif %}
+
+<div class="jrow"
+     id="job-{{ job.id }}"
+     data-score="{{ score }}"
+     data-src="{{ src }}"
+     data-loc="{{ job.location | default('') | lower }}"
+     data-visa="{{ visa }}"
+     data-text="{{ (job.title ~ ' ' ~ job.company ~ ' ' ~ (job.location | default('')) ~ ' ' ~ (tech_tags | join(' ')) ~ ' ' ~ (role_tags | join(' '))) | lower }}">
+
+  <div class="jrow-main">
+
+    <!-- score -->
+    <div class="col-score">
+      <svg class="score-ring {{ sr_cls }}" viewBox="0 0 40 40">
+        <circle class="sr-bg" cx="20" cy="20" r="16"/>
+        <circle class="sr-fill" cx="20" cy="20" r="16"
+                stroke-dasharray="{{ (score / 100 * 100.53) | round(1) }} 100.53"
+                stroke-dashoffset="25.1"/>
+        <text class="sr-txt" x="20" y="20" text-anchor="middle" dominant-baseline="central">{{ score }}</text>
+      </svg>
+    </div>
+
+    <!-- title + company -->
+    <div class="c-title">
+      <div class="ct-row1">
+        <span class="job-title">{{ job.title }}</span>
+        <span class="src-badge {{ src_cls }}">{{ src_lbl }}</span>
+        {% if job.applied %}<span class="applied-pip">✓ applied</span>{% endif %}
+      </div>
+      <div class="ct-row2">
+        <span class="job-co">{{ job.company }}</span>
+        {% if job.posted_date %}<span class="job-age">{{ job.posted_date.strftime('%d %b') if job.posted_date.strftime else job.posted_date }}</span>{% endif %}
+      </div>
+    </div>
+
+    <!-- location -->
+    <div class="c-loc">
+      <span class="tier-pip {{ tp_cls }}"></span>
+      <span class="loc-text">{{ job.location | default('—') }}</span>
+      {% if job.remote %}<span class="rem-tag">Remote</span>{% endif %}
+    </div>
+
+    <!-- visa -->
+    <div class="c-visa">
+      <span class="vbadge {{ v_cls }}">{{ v_lbl }}</span>
+    </div>
+
+    <!-- seniority -->
+    <div class="c-snr">
+      <span class="snrbadge {{ s_cls }}">{{ s_lbl }}</span>
+    </div>
+
+    <!-- tags -->
+    <div class="c-tags">
+      {% for t in tech_tags[:3] %}<span class="xtag xt-tech">{{ t }}</span>{% endfor %}
+      {% if role_tags %}<span class="xtag xt-role">{{ role_tags[0] }}</span>{% endif %}
+      {% if indus_tags %}<span class="xtag xt-indus">{{ indus_tags[0] }}</span>{% endif %}
+    </div>
+
+    <!-- actions -->
+    <div class="c-act">
+      <a class="btn btn-sm btn-green apply-ext"
+         href="{{ job.url }}"
+         target="_blank" rel="noopener"
+         data-job-id="{{ job.id }}"
+         data-company="{{ job.company }}">Apply ↗</a>
+      <button class="btn btn-sm mark-applied-btn"
+              data-job-id="{{ job.id }}"
+              data-company="{{ job.company }}">✓ Mark</button>
+      <button class="btn btn-sm btn-ghost hide-btn"
+              data-job-id="{{ job.id }}">╳</button>
+    </div>
+
+  </div><!-- /jrow-main -->
+
+  <!-- ── EXPANDED PANEL ─────────────────────────────────────────── -->
+  <div class="jrow-expand">
+    <div class="expand-inner">
+
+      <!-- AI reasoning -->
+      {% if job.reasoning %}
+      <div class="reasoning-block">
+        <div class="rb-label">AI assessment</div>
+        <div class="rb-text">{{ job.reasoning }}</div>
+      </div>
+      {% endif %}
+
+      <!-- Score breakdown — widths set via JS to avoid CSS linter false-positives -->
+      <div class="score-breakdown">
+        <div class="bd-title">Score breakdown</div>
+        <div class="bd-grid">
+          {% set bd = job.score_breakdown if job.score_breakdown else {} %}
+          {% set ai_v    = bd.ai_semantic  | default(0) | float %}
+          {% set tech_v  = bd.technical    | default(0) | float %}
+          {% set cult_v  = bd.culture      | default(0) | float %}
+          {% set ind_v   = bd.industry     | default(0) | float %}
+          {% set role_v  = bd.role         | default(0) | float %}
+          {% set elig_v  = bd.eligibility  | default(0) | float %}
+          {% set visa_v  = bd.visa         | default(0) | float %}
+          <div class="bd-row"><span class="bd-name">AI semantic</span><div class="bd-bar"><div class="bd-fill gfill" data-pct="{{ [ai_v,100]|min|int }}"></div></div><span class="bd-val">{{ ai_v|round|int }}</span></div>
+          <div class="bd-row"><span class="bd-name">Technical</span><div class="bd-bar"><div class="bd-fill gfill" data-pct="{{ [tech_v,100]|min|int }}"></div></div><span class="bd-val">{{ tech_v|round|int }}</span></div>
+          <div class="bd-row"><span class="bd-name">Culture fit</span><div class="bd-bar"><div class="bd-fill gfill" data-pct="{{ [cult_v,100]|min|int }}"></div></div><span class="bd-val">{{ cult_v|round|int }}</span></div>
+          <div class="bd-row"><span class="bd-name">Industry</span><div class="bd-bar"><div class="bd-fill yfill" data-pct="{{ [ind_v,100]|min|int }}"></div></div><span class="bd-val">{{ ind_v|round|int }}</span></div>
+          <div class="bd-row"><span class="bd-name">Role fit</span><div class="bd-bar"><div class="bd-fill yfill" data-pct="{{ [role_v,100]|min|int }}"></div></div><span class="bd-val">{{ role_v|round|int }}</span></div>
+          <div class="bd-row"><span class="bd-name">Eligibility</span><div class="bd-bar"><div class="bd-fill wfill" data-pct="{{ [elig_v,100]|min|int }}"></div></div><span class="bd-val">{{ elig_v|round|int }}</span></div>
+          <div class="bd-row"><span class="bd-name">Visa</span><div class="bd-bar"><div class="bd-fill wfill" data-pct="{{ [visa_v,100]|min|int }}"></div></div><span class="bd-val">{{ visa_v|round|int }}</span></div>
         </div>
-        <div class="score-badge {% if job.fit_score >= 70 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
-            {{ "%.0f"|format(job.fit_score or 0) }}%
-        </div>
+      </div>
+
+      <!-- All tech tags -->
+      {% if tech_tags or role_tags or indus_tags %}
+      <div class="all-tags">
+        {% for t in tech_tags %}<span class="xtag xt-tech">{{ t }}</span>{% endfor %}
+        {% for t in role_tags %}<span class="xtag xt-role">{{ t }}</span>{% endfor %}
+        {% for t in indus_tags %}<span class="xtag xt-indus">{{ t }}</span>{% endfor %}
+      </div>
+      {% endif %}
+
+    </div><!-- /expand-inner -->
+
+    <!-- ── Application Question Assistant ──────────────────────────────── -->
+    <div class="app-assist" id="assist-{{ job.id }}">
+      <div class="aa-header">
+        <span class="aa-icon">✍</span>
+        <span class="aa-title">Application assistant</span>
+        <span class="aa-hint">Paste a question from the application form and get an answer in your voice</span>
+      </div>
+      <div class="aa-messages" id="aa-msgs-{{ job.id }}"></div>
+      <div class="aa-input-row">
+        <textarea class="aa-input" id="aa-q-{{ job.id }}"
+                  placeholder="e.g. What makes this company special to you?" rows="2"></textarea>
+        <button class="btn btn-sm btn-green aa-send"
+                data-job-id="{{ job.id }}"
+                data-job-title="{{ job.title|e }}"
+                data-job-company="{{ job.company|e }}"
+                data-job-desc="{{ (job.description or '')|truncate(2000,True,'')|e }}">Ask Kimi</button>
+      </div>
+    </div>
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+
+    <div class="expand-actions">
+      <a class="btn btn-sm btn-green" href="{{ job.url }}" target="_blank" rel="noopener">Open job ↗</a>
+      <button class="btn btn-sm view-cl-btn" data-job-id="{{ job.id }}">Cover letter</button>
+      <button class="btn btn-sm btn-purple gen-cv-btn" data-job-id="{{ job.id }}" data-job-title="{{ job.title|e }}" data-job-company="{{ job.company|e }}">⚡ Generate CV</button>
+      <button class="btn btn-sm mark-applied-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}">Mark applied</button>
+      <button class="btn btn-sm update-status-btn" data-job-id="{{ job.id }}">Update status</button>
+      <button class="btn btn-sm btn-ghost hide-btn" data-job-id="{{ job.id }}">Hide</button>
     </div>
 
-    <!-- Quick Meta Info -->
-    <div class="job-meta">
-        <span class="meta-item">{{ job.location or 'Remote' }}</span>
-        {% if job.remote %}<span class="meta-item">Remote</span>{% endif %}
-        <span class="meta-item">{{ job.source or 'unknown' }}</span>
-        {% if job.posted_date %}<span class="meta-item">{{ job.posted_date }}</span>{% endif %}
-    </div>
+  </div><!-- /jrow-expand -->
 
-    <!-- Skills & Tags -->
-    <div class="tags">
-        {% if job.role_matches %}
-            <span class="chip chip-role">{{ job.role_matches[0] }}</span>
-        {% endif %}
-        {% if job.tech_matches %}
-            {% for tech in job.tech_matches[:4] %}
-                <span class="chip chip-tech">{{ tech }}</span>
-            {% endfor %}
-        {% endif %}
-        {% if job.industry_matches %}
-            <span class="chip chip-industry">{{ job.industry_matches[0] }}</span>
-        {% endif %}
-    </div>
+</div><!-- /jrow -->
+<script>
+(function(){
+  document.querySelectorAll('.bd-fill[data-pct]').forEach(function(el){
+    el.style.width = (el.dataset.pct || 0) + '%';
+  });
 
-    <!-- Reasoning (Why it matches) -->
-    <div class="job-reasoning">
-        <div class="reasoning-label">Why it matches:</div>
-        {{ (job.reasoning or 'This role matches your skills and industry preferences.')[:150] }}{% if (job.reasoning or '')|length > 150 %}…{% endif %}
-        <button class="btn-link" onclick="viewJobDetails({{ job.id }}, '{{ job.company }}', '{{ job.title }}')" style="margin-left: 8px; color: var(--primary); cursor: pointer; background: none; border: none; text-decoration: underline; font-size: 13px;">View full details</button>
-    </div>
+  // ── Generate CV ───────────────────────────────────────────────────────
+  document.querySelectorAll('.gen-cv-btn:not([data-cv-bound])').forEach(function(btn){
+    btn.setAttribute('data-cv-bound', '1');
+    btn.addEventListener('click', function(){
+      var jobId   = btn.dataset.jobId;
+      var title   = btn.dataset.jobTitle;
+      var company = btn.dataset.jobCompany;
+      var orig    = btn.textContent;
 
-    <!-- Actions -->
-    <div class="job-actions">
-        <a href="{{ job.url }}" 
-           target="_blank" 
-           class="btn btn-primary btn-small apply-link"
-           data-job-id="{{ job.id }}"
-           data-company="{{ job.company }}">
-            <span>Apply Myself</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
-        </a>
+      btn.disabled    = true;
+      btn.textContent = '⏳ Generating…';
 
-        {% if not job.applied_date %}
-        <!-- Only show auto-submit for supported platforms -->
-        {% set url_lower = job.url|lower %}
-        {% set source_lower = (job.source or '')|lower %}
-        {% if 'greenhouse.io' in url_lower or 'lever.co' in url_lower or 'myworkdayjobs.com' in url_lower %}
-        <button class="btn btn-success btn-small auto-submit-btn" 
-                data-job-id="{{ job.id }}" 
-                data-source-id="{{ job.source_id }}"
-                data-company="{{ job.company }}"
-                title="Automatically submit application using generated CV">
-            <span>Auto-Submit</span>
-        </button>
-        {% endif %}
-        
-        <button class="btn btn-surface btn-small mark-applied-btn" data-job-id="{{ job.id }}" data-company="{{ job.company }}">
-            <span>Mark applied</span>
-        </button>
-        {% else %}
-        <button class="btn btn-surface btn-small update-status-btn" data-job-id="{{ job.id }}">
-            <span>Update</span>
-        </button>
-        {% endif %}
+      fetch('/api/generate_cv/' + jobId, { method: 'POST' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d.success) {
+            btn.textContent = '✅ CV ready';
+            btn.style.opacity = '0.7';
+            alert('CV generated for ' + title + ' @ ' + company + '.\nCheck the applications/ folder.');
+          } else {
+            btn.disabled    = false;
+            btn.textContent = orig;
+            alert('Error: ' + (d.error || 'unknown'));
+          }
+        })
+        .catch(function(err){
+          btn.disabled    = false;
+          btn.textContent = orig;
+          alert('Request failed: ' + err);
+        });
+    });
+  });
 
-        <button class="btn btn-outline btn-small view-cover-letter-btn" 
-                data-job-id="{{ job.id }}" 
-                data-company="{{ job.company }}" 
-                data-title="{{ job.title }}">
-            <span>Cover Letter</span>
-        </button>
-        
-        <button class="btn btn-ghost btn-small hide-job-btn" 
-                data-job-id="{{ job.id }}" 
-                title="Hide this job">
-            <span>Hide</span>
-        </button>
-    </div>
-</div>
+  // ── Application assistant ─────────────────────────────────────────────
+  document.querySelectorAll('.aa-send:not([data-aa-bound])').forEach(function(btn){
+    btn.setAttribute('data-aa-bound', '1');
+    btn.addEventListener('click', function(){
+      var jobId   = btn.dataset.jobId;
+      var q       = (document.getElementById('aa-q-' + jobId).value || '').trim();
+      if (!q) return;
+
+      var msgs = document.getElementById('aa-msgs-' + jobId);
+
+      // Show question bubble
+      var qBubble = document.createElement('div');
+      qBubble.className = 'aa-msg aa-user';
+      qBubble.textContent = q;
+      msgs.appendChild(qBubble);
+
+      // Show loading bubble
+      var loadBubble = document.createElement('div');
+      loadBubble.className = 'aa-msg aa-bot aa-loading';
+      loadBubble.textContent = 'Kimi is thinking…';
+      msgs.appendChild(loadBubble);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      btn.disabled = true;
+
+      fetch('/api/application_assistant', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          job_id:          jobId,
+          job_title:       btn.dataset.jobTitle,
+          job_company:     btn.dataset.jobCompany,
+          job_description: btn.dataset.jobDesc,
+          question:        q
+        })
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        loadBubble.classList.remove('aa-loading');
+        if (d.success) {
+          loadBubble.className = 'aa-msg aa-bot';
+          loadBubble.textContent = d.answer;
+
+          // Copy button
+          var copyBtn = document.createElement('button');
+          copyBtn.className = 'aa-copy';
+          copyBtn.textContent = 'Copy';
+          copyBtn.addEventListener('click', function(){
+            navigator.clipboard.writeText(d.answer).then(function(){
+              copyBtn.textContent = 'Copied!';
+              setTimeout(function(){ copyBtn.textContent = 'Copy'; }, 1500);
+            });
+          });
+          loadBubble.appendChild(copyBtn);
+        } else {
+          loadBubble.className = 'aa-msg aa-error';
+          loadBubble.textContent = 'Error: ' + (d.error || 'unknown');
+        }
+        msgs.scrollTop = msgs.scrollHeight;
+      })
+      .catch(function(err){
+        loadBubble.className = 'aa-msg aa-error';
+        loadBubble.textContent = 'Request failed: ' + err;
+        msgs.scrollTop = msgs.scrollHeight;
+      })
+      .finally(function(){
+        btn.disabled = false;
+        document.getElementById('aa-q-' + jobId).value = '';
+      });
+    });
+  });
+})();
+</script>

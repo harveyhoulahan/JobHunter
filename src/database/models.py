@@ -2,6 +2,7 @@
 Database models and schema for JobHunter
 """
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import create_engine, Column, Integer, String, Text, Float, Boolean, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -31,6 +32,7 @@ class Job(Base):
     # Scoring
     fit_score = Column(Float, default=0.0)
     reasoning = Column(Text)
+    score_breakdown = Column(JSON)  # {"ai_semantic": 80, "technical": 60, ...}
     
     # Match details (stored as JSON)
     tech_matches = Column(JSON)  # ["Python", "AWS", "ML"]
@@ -118,7 +120,7 @@ class Alert(Base):
 class Database:
     """Database manager"""
     
-    def __init__(self, database_url: str = None):
+    def __init__(self, database_url: Optional[str] = None):
         if database_url is None:
             # Default to SQLite in data directory
             db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'jobhunter.db')
@@ -136,7 +138,7 @@ class Database:
         """Get a new database session"""
         return self.SessionLocal()
     
-    def job_exists(self, url: str = None, source_id: str = None, title: str = None, company: str = None, location: str = None) -> bool:
+    def job_exists(self, url: Optional[str] = None, source_id: Optional[str] = None, title: Optional[str] = None, company: Optional[str] = None, location: Optional[str] = None) -> bool:
         """
         Check if job already exists by URL, source_id, or company+title+location combo
         This catches reposts where companies repost the same job with a new LinkedIn ID
@@ -178,7 +180,10 @@ class Database:
         """Add a new job listing"""
         session = self.get_session()
         try:
-            job = Job(**job_data)
+            # Strip any fields that are not valid Job columns
+            valid_columns = {c.key for c in Job.__table__.columns}
+            filtered = {k: v for k, v in job_data.items() if k in valid_columns}
+            job = Job(**filtered)
             session.add(job)
             session.commit()
             session.refresh(job)
@@ -211,8 +216,8 @@ class Database:
         finally:
             session.close()
     
-    def mark_applied(self, job_id: int, cv_version: str = None, cover_letter_version: str = None, 
-                     application_method: str = None, notes: str = None):
+    def mark_applied(self, job_id: int, cv_version: Optional[str] = None, cover_letter_version: Optional[str] = None,
+                     application_method: Optional[str] = None, notes: Optional[str] = None):
         """Mark job as applied with application details"""
         session = self.get_session()
         try:
@@ -228,13 +233,14 @@ class Database:
                 if application_method:
                     job.application_method = application_method
                 if notes:
-                    job.notes = notes if not job.notes else f"{job.notes}\n\n{notes}"
+                    existing_notes = str(job.notes) if job.notes is not None else ''
+                    job.notes = notes if not existing_notes else f"{existing_notes}\n\n{notes}"
                 session.commit()
                 logger.info(f"Marked job {job_id} as applied via {application_method or 'unknown'}")
         finally:
             session.close()
     
-    def update_job_status(self, job_id: int, status: str, notes: str = None):
+    def update_job_status(self, job_id: int, status: str, notes: Optional[str] = None):
         """
         Update job application status
         Valid statuses: new, applied, phone_screen, interview, offer, rejected, withdrawn
@@ -245,7 +251,8 @@ class Database:
             if job:
                 job.status = status
                 if notes:
-                    job.notes = notes if not job.notes else f"{job.notes}\n\n{notes}"
+                    existing_notes = str(job.notes) if job.notes is not None else ''
+                    job.notes = notes if not existing_notes else f"{existing_notes}\n\n{notes}"
                 if status == 'rejected':
                     job.rejected = True
                 session.commit()
@@ -253,7 +260,7 @@ class Database:
         finally:
             session.close()
     
-    def add_interview_round(self, job_id: int, interview_type: str, date: str = None, notes: str = None):
+    def add_interview_round(self, job_id: int, interview_type: str, date: Optional[str] = None, notes: Optional[str] = None):
         """Add an interview round to job tracking"""
         session = self.get_session()
         try:
@@ -319,7 +326,7 @@ class Database:
 
 
 # Initialize database
-def init_db(database_url: str = None):
+def init_db(database_url: Optional[str] = None):
     """Initialize the database"""
     db = Database(database_url)
     db.create_tables()

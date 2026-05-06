@@ -1,1069 +1,525 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JobHunter Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=2.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter · Ops Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css?v=3.0">
 </head>
 <body>
-    <div class="page">
-        <div class="header">
-            <div class="brand">JobHunter</div>
-            <div class="mode-switcher">
-                <button class="mode-btn active" data-mode="tech">Tech Jobs</button>
-                <button class="mode-btn" data-mode="goldcoast">Gold Coast Lifestyle</button>
-            </div>
-            <div class="nav">
-                <a href="/">All Jobs</a>
-                <a href="/applied">My Applications</a>
-                <a href="/stats">Statistics</a>
-                <a href="/settings">Settings</a>
-            </div>
-        </div>
+<div class="shell">
 
-        <section class="hero">
-            <div class="hero-card">
-                <div class="pill">Live board · {{ stats.total_jobs }} tracked</div>
-                <h1>Match, apply, and track without breaking flow.</h1>
-                <p>Highest-scoring roles surface first. Mark applied, update status, and move on—no spreadsheets, no guesswork.</p>
-                <div class="hero-actions">
-                    <a class="btn btn-primary" href="#job-list">Jump to matches</a>
-                    <a class="btn btn-ghost" href="/applied">Review applications</a>
-                    <button class="btn btn-outline" id="runScrapeBtn">Run scrape now</button>
-                </div>
-            </div>
-            <div class="hero-aside">
-                <div>
-                    <div class="label">Ready to apply</div>
-                    <div class="stat-pill">{{ stats.applied }} sent · {{ "%.1f"|format(stats.response_rate) }}% response</div>
-                </div>
-                <div>
-                    <div class="label">Interviews in play</div>
-                    <div class="stat-pill">{{ stats.interviews }} interviews · {{ stats.offers }} offers</div>
-                </div>
-                <div>
-                    <div class="label">New jobs today</div>
-                    <div class="stat-pill">{{ stats.total_jobs - stats.applied }} still open</div>
-                </div>
-                <div>
-                    <div class="label">Last scrape</div>
-                    {% if last_scrape %}
-                        <div class="stat-pill">
-                            {{ last_scrape.timestamp.strftime('%b %d, %I:%M %p') }} · {{ last_scrape.jobs_new or 0 }} new added · {{ last_scrape.jobs_found or 0 }} scraped · {{ "%.1fs"|format(last_scrape.duration or 0) }}
-                        </div>
-                    {% else %}
-                        <div class="stat-pill">Not run yet</div>
-                    {% endif %}
-                </div>
-            </div>
-        </section>
-
-        <section class="filters">
-            <div class="filters-row">
-                <div>
-                    <div class="label">Search jobs</div>
-                    <input id="searchFilter" class="input" type="text" placeholder="Search title, company, skills...">
-                </div>
-                <div>
-                    <div class="label">Location filter</div>
-                    <select id="locationFilter" class="select">
-                        <option value="all">All locations</option>
-                        <option value="remote">Remote only</option>
-                        <option value="nyc">New York</option>
-                        <option value="sf">San Francisco</option>
-                        <option value="la">Los Angeles</option>
-                        <option value="seattle">Seattle</option>
-                        <option value="austin">Austin</option>
-                        <option value="boston">Boston</option>
-                    </select>
-                </div>
-                <div>
-                    <div class="label">Source</div>
-                    <select id="sourceFilter" class="select">
-                        <option value="all">All sources</option>
-                        <option value="linkedin">LinkedIn</option>
-                        <option value="builtin">BuiltIn</option>
-                        <option value="yc_jobs">Y Combinator</option>
-                        <option value="seek">Seek (AU)</option>
-                    </select>
-                </div>
-            </div>
-            <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 8px;">
-                <span class="subtle"><span id="visibleCount">{{ (top_matches|length + great_matches|length + good_matches|length) }}</span> new roles ready to review</span>
-                <button id="resetFilters" class="btn btn-outline btn-small">Reset filters</button>
-            </div>
-        </section>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Total Jobs</h3>
-                <div class="value">{{ stats.total_jobs }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Applied</h3>
-                <div class="value">{{ stats.applied }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Interviews</h3>
-                <div class="value">{{ stats.interviews }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Offers</h3>
-                <div class="value">{{ stats.offers }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Response Rate</h3>
-                <div class="value">{{ "%.1f"|format(stats.response_rate) }}%</div>
-            </div>
-        </div>
-
-        <section class="panel" id="job-list">
-            <!-- Top Priority Matches (70%+) -->
-            {% if top_matches %}
-            <div class="section-title">
-                <div>
-                    <h2>🔥 Top Priority Matches</h2>
-                    <div class="subtle">{{ top_matches|length }} exceptional matches ≥70% — Apply immediately</div>
-                </div>
-                <div class="pill score-high">Auto-apply tier 1</div>
-            </div>
-
-            <div class="jobs-grid">
-                {% for job in top_matches %}
-                {% include 'job_card.html' %}
-                {% endfor %}
-            </div>
-            {% endif %}
-
-            <!-- Great Matches (60-69%) -->
-            {% if great_matches %}
-            <div class="section-title" style="margin-top: 48px;">
-                <div>
-                    <h2>⭐ Strong Matches</h2>
-                    <div class="subtle">{{ great_matches|length }} great opportunities 60-69% — Review and apply</div>
-                </div>
-                <div class="pill score-mid">Worth reviewing</div>
-            </div>
-
-            <div class="jobs-grid">
-                {% for job in great_matches %}
-                {% include 'job_card.html' %}
-                {% endfor %}
-            </div>
-            {% endif %}
-
-            <!-- Good Matches (50-59%) -->
-            {% if good_matches %}
-            <div class="section-title" style="margin-top: 48px;">
-                <div>
-                    <h2>👍 Good Matches</h2>
-                    <div class="subtle">{{ good_matches|length }} solid options 50-59% — Consider if aligned</div>
-                </div>
-                <div class="pill score-low">Consider</div>
-            </div>
-
-            <div class="jobs-grid">
-                {% for job in good_matches %}
-                {% include 'job_card.html' %}
-                {% endfor %}
-            </div>
-            {% endif %}
-
-            <div id="emptyState" class="empty-state" {% if top_matches or great_matches or good_matches %}style="display:none;"{% endif %}>
-                No new jobs found above 50% yet. Check back after next scrape.
-            </div>
-        </section>
+  <!-- ── TOP BAR ──────────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-logo">JH</div>
+      <span class="brand-name">JobHunter</span>
     </div>
 
-    <!-- Mark Applied Modal -->
-    <div id="applyModal" class="modal">
-        <div class="modal-content">
-            <h3>Mark as Applied</h3>
-            <div class="form-group">
-                <label>CV Used</label>
-                <input type="text" id="cvVersion" placeholder="e.g., Cohere_ML_Engineer_Resume.pdf">
-            </div>
-            <div class="form-group">
-                <label>Application Method</label>
-                <select id="appMethod">
-                    <option value="linkedin">LinkedIn</option>
-                    <option value="company_site">Company Website</option>
-                    <option value="email">Email</option>
-                    <option value="other">Other</option>
-                </select>
-            </div>
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="btn btn-primary" onclick="submitApplied()">Submit</button>
-                <button class="btn btn-outline" onclick="closeModal('applyModal')">Cancel</button>
-            </div>
-        </div>
+    <div class="topbar-pills">
+      <div class="t-pill">
+        <div class="status-dot {% if last_scrape %}{% else %}off{% endif %}"></div>
+        <span class="label">Agent</span>
+        <span class="val g">{% if last_scrape %}Active{% else %}Idle{% endif %}</span>
+      </div>
+      <div class="t-pill">
+        <span class="label">Last run</span>
+        <span class="val">{% if last_scrape %}{{ last_scrape.timestamp.strftime('%d %b %H:%M') }}{% else %}—{% endif %}</span>
+      </div>
+      <div class="t-pill">
+        <span class="label">New</span>
+        <span class="val g">{% if last_scrape %}{{ last_scrape.jobs_new or 0 }}{% else %}—{% endif %}</span>
+      </div>
+      <div class="t-pill">
+        <span class="label">Scraped</span>
+        <span class="val">{% if last_scrape %}{{ last_scrape.jobs_found or 0 }}{% else %}—{% endif %}</span>
+      </div>
+      <div class="t-pill">
+        <span class="label">AI model</span>
+        <span class="val g">moonshot-v1-8k</span>
+      </div>
+      <div class="t-pill">
+        <span class="label">Markets</span>
+        <span class="val">AU · US · EU · Remote</span>
+      </div>
     </div>
 
-    <!-- Confirmation Dialog for Application -->
-    <div id="confirmApplyModal" class="modal">
-        <div class="modal-content" style="max-width: 480px; text-align: center;">
-            <div style="font-size: 48px; margin-bottom: 16px;">Generate Cover Letter</div>
-            <h3 style="margin-bottom: 8px;">Did you just apply?</h3>
-            <p style="color: var(--muted); margin-bottom: 24px; line-height: 1.6;">
-                We noticed you clicked apply for <strong id="confirmCompanyName" style="color: var(--accent-2);"></strong>.
-                <br>Did you complete the application?
-            </p>
-            <div style="display: flex; gap: 12px; justify-content: center;">
-                <button class="btn btn-primary" onclick="confirmApplied(true)" style="min-width: 120px;">
-                    ✓ Yes, I applied
-                </button>
-                <button class="btn btn-outline" onclick="confirmApplied(false)" style="min-width: 120px;">
-                    Not yet
-                </button>
-            </div>
-        </div>
+    <div class="topbar-end">
+      <button class="btn btn-outline" id="runScrapeBtn">▶ Run scan</button>
+      <a class="btn btn-ghost" href="/applied">Applications</a>
+      <a class="btn btn-ghost" href="/stats">Stats</a>
+    </div>
+  </header>
+
+  <!-- ── SIDEBAR ──────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sb-section">
+      <div class="sb-label">Views</div>
+      <a class="nav-link active" href="/">All new jobs</a>
+      <a class="nav-link" href="/applied">Applied <span class="nav-badge">{{ stats.applied }}</span></a>
+      <a class="nav-link" href="/stats">Statistics</a>
+      <a class="nav-link" href="/settings">Settings</a>
+      <a class="nav-link" href="/setup">Setup / Profile</a>
     </div>
 
-    <!-- Update Status Modal -->
-    <div id="statusModal" class="modal">
-        <div class="modal-content">
-            <h3>Update Job Status</h3>
-            <div class="form-group">
-                <label>Status</label>
-                <select id="newStatus">
-                    <option value="applied">Applied</option>
-                    <option value="phone_screen">Phone Screen</option>
-                    <option value="interview">Interview</option>
-                    <option value="offer">Offer</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="withdrawn">Withdrawn</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Notes</label>
-                <textarea id="statusNotes" placeholder="Add any notes..."></textarea>
-            </div>
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="btn btn-primary" onclick="submitStatus()">Update</button>
-                <button class="btn btn-outline" onclick="closeModal('statusModal')">Cancel</button>
-            </div>
-        </div>
+    <div class="sb-section">
+      <div class="sb-label">Score tiers</div>
+      <div class="threshold-item">
+        <span class="thr-name" style="color:var(--green)">Immediate</span>
+        <div class="thr-bar"><div class="thr-fill" style="width:82%;background:var(--green)"></div></div>
+        <span class="thr-val">≥82</span>
+      </div>
+      <div class="threshold-item">
+        <span class="thr-name" style="color:var(--yellow)">Digest</span>
+        <div class="thr-bar"><div class="thr-fill" style="width:65%;background:var(--yellow)"></div></div>
+        <span class="thr-val">≥65</span>
+      </div>
+      <div class="threshold-item">
+        <span class="thr-name" style="color:var(--text-3)">On watch</span>
+        <div class="thr-bar"><div class="thr-fill" style="width:50%;background:var(--text-3)"></div></div>
+        <span class="thr-val">≥50</span>
+      </div>
     </div>
 
-    <!-- Cover Letter Modal -->
-    <div id="coverLetterModal" class="modal">
-        <div class="modal-content" style="max-width: 800px;">
-            <h3>Cover Letter</h3>
-            <div id="coverLetterLoadingState" style="display: none; text-align: center; padding: 40px; color: var(--muted);">
-                <p>🔄 Generating cover letter with AI...</p>
-                <p style="font-size: 14px; margin-top: 8px;">This may take 10-15 seconds</p>
-            </div>
-            <div id="coverLetterEmptyState" style="display: none; text-align: center; padding: 40px;">
-                <p style="font-size: 18px; margin-bottom: 12px; color: var(--warning);">📝 No cover letter yet</p>
-                <p style="color: var(--muted); font-size: 14px; margin-bottom: 20px;">Generate a customized cover letter for this position using AI</p>
-                <button class="btn btn-primary" onclick="generateCoverLetter()" id="generateCoverLetterBtn">Generate Cover Letter</button>
-            </div>
-            <div id="coverLetterEditArea" style="display: none;">
-                <textarea id="coverLetterContent" 
-                    style="width: 100%; min-height: 450px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; line-height: 1.7; font-family: 'Inter', sans-serif; color: var(--text); resize: vertical; font-size: 14px;"
-                    placeholder="Cover letter will appear here...">Loading...</textarea>
-                <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px; color: var(--muted); font-size: 13px;">
-                    <span id="wordCount">0 words</span>
-                    <span>•</span>
-                    <span id="charCount">0 characters</span>
-                    <span style="margin-left: auto; color: var(--success);">✓ Auto-saves on edit</span>
-                </div>
-            </div>
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="btn btn-primary" onclick="copyCoverLetter()" id="copyCoverLetterBtn" style="display: none;">📋 Copy to Clipboard</button>
-                <button class="btn btn-success" onclick="downloadCoverLetterPDF()" id="downloadPDFBtn" style="display: none;">Download PDF</button>
-                <button class="btn btn-outline" onclick="generateCoverLetter()" id="regenerateCoverLetterBtn" style="display: none;">🔄 Regenerate</button>
-                <button class="btn btn-outline" onclick="closeModal('coverLetterModal')">Close</button>
-            </div>
-        </div>
+    <div class="sb-section">
+      <div class="sb-label">Markets active</div>
+      <div class="market-item"><span class="mflag">🇦🇺</span><span class="mname">Australia</span><span class="mcount">5 cities</span></div>
+      <div class="market-item"><span class="mflag">🌐</span><span class="mname">Remote / Global</span><span class="mcount">tier 1</span></div>
+      <div class="market-item"><span class="mflag">🇺🇸</span><span class="mname">United States</span><span class="mcount">7 cities</span></div>
+      <div class="market-item"><span class="mflag">🇬🇧</span><span class="mname">Europe / UK</span><span class="mcount">8 cities</span></div>
+      <div class="market-item"><span class="mflag">🇨🇦</span><span class="mname">Canada</span><span class="mcount">2 cities</span></div>
+      <div class="market-item"><span class="mflag">🇸🇬</span><span class="mname">Singapore</span><span class="mcount">1 city</span></div>
     </div>
 
-    <!-- Job Details Modal -->
-    <div id="jobDetailsModal" class="modal">
-        <div class="modal-content" style="max-width: 900px;">
-            <h3 id="jobDetailsTitle">Job Details</h3>
-            <div id="jobDetailsContent" style="max-height: 600px; overflow-y: auto;">
-                <div style="margin-bottom: 20px;">
-                    <strong style="color: var(--primary);">Company:</strong> <span id="jobDetailsCompany"></span>
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <strong style="color: var(--primary);">Location:</strong> <span id="jobDetailsLocation"></span>
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <strong style="color: var(--primary);">Score:</strong> <span id="jobDetailsScore"></span>
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <strong style="color: var(--primary);">Why it matches:</strong>
-                    <p id="jobDetailsReasoning" style="margin-top: 8px; line-height: 1.6;"></p>
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <strong style="color: var(--primary);">Job Description:</strong>
-                    <div id="jobDetailsDescription" style="margin-top: 8px; line-height: 1.6; white-space: pre-wrap; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 8px; border: 1px solid var(--border);"></div>
-                </div>
-            </div>
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <a id="jobDetailsApplyBtn" href="#" target="_blank" class="btn btn-primary">Apply on Website</a>
-                <button class="btn btn-outline" onclick="closeModal('jobDetailsModal')">Close</button>
-            </div>
-        </div>
+    <div class="sb-section">
+      <div class="sb-label">Visa status</div>
+      <div class="market-item"><span class="mname" style="font-size:10px;color:var(--green)">✓ AU citizen — no sponsor needed for AU/EU/CA</span></div>
+      <div class="market-item"><span class="mname" style="font-size:10px">E-3 eligible for US roles</span></div>
+      <div class="market-item"><span class="mname" style="font-size:10px">primary market: BOTH</span></div>
     </div>
 
-    <!-- Toast Notification -->
-    <div id="toast" class="toast"></div>
-
-    <!-- Application Review Modal -->
-    <div id="applicationReviewModal" class="modal">
-        <div class="modal-content" style="max-width: 1000px;">
-            <h3>Review Application for <span id="reviewCompany" style="color: var(--primary);"></span></h3>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
-                <!-- Left: Cover Letter Editor -->
-                <div>
-                    <h4 style="margin-bottom: 12px;">Cover Letter</h4>
-                    <textarea 
-                        id="reviewCoverLetterText" 
-                        style="width: 100%; height: 500px; padding: 16px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: inherit; font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.5; resize: vertical;"
-                        placeholder="Cover letter text will appear here..."></textarea>
-                    <div style="margin-top: 8px; font-size: 13px; color: var(--text-secondary);">
-                        You can edit the cover letter before submitting
-                    </div>
-                </div>
-
-                <!-- Right: PDF Preview -->
-                <div>
-                    <h4 style="margin-bottom: 12px;">PDF Preview</h4>
-                    <iframe 
-                        id="pdfPreviewFrame" 
-                        style="width: 100%; height: 500px; border-radius: 8px; border: 1px solid var(--border); background: white;"
-                        src="about:blank"></iframe>
-                    <div style="margin-top: 8px; font-size: 13px; color: var(--text-secondary);">
-                        This is what employers will see
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 12px; margin-top: 24px; justify-content: flex-end;">
-                <button class="btn btn-outline" onclick="closeModal('applicationReviewModal')">Cancel</button>
-                <button id="approveApplicationBtn" class="btn btn-primary">Approve & Submit</button>
-            </div>
-        </div>
+    <div class="sb-section">
+      <div class="sb-label">Candidate</div>
+      <div class="market-item" style="flex-direction:column;align-items:flex-start;gap:2px;">
+        <span style="font-size:12px;color:var(--text);font-weight:600;">Harvey Houlahan</span>
+        <span style="font-size:10px;color:var(--text-3)">ML Eng · Byron Bay NSW</span>
+        <span style="font-size:10px;color:var(--text-3)">ArborMeta · Step One</span>
+      </div>
     </div>
 
-    <script>
-        console.log('Dashboard JavaScript loaded successfully');
-        let currentJobId = null;
-        let currentCompany = null;
+  </aside>
 
-        // Track when user clicks apply link
-        document.addEventListener('click', function(e) {
-            const applyLink = e.target.closest('.apply-link');
-            if (applyLink) {
-                const jobId = applyLink.dataset.jobId;
-                const company = applyLink.dataset.company;
-                
-                // Store in localStorage that they're applying
-                localStorage.setItem('pendingApplication', JSON.stringify({
-                    jobId: jobId,
-                    company: company,
-                    timestamp: Date.now()
-                }));
-            }
-        });
+  <!-- ── MAIN ─────────────────────────────────────────────────────────── -->
+  <main class="main">
 
-        // Check if user returned from applying
-        window.addEventListener('focus', function() {
-            const pending = localStorage.getItem('pendingApplication');
-            if (pending) {
-                const app = JSON.parse(pending);
-                
-                // Only prompt if it was within last 10 minutes
-                const tenMinutes = 10 * 60 * 1000;
-                if (Date.now() - app.timestamp < tenMinutes) {
-                    setTimeout(() => {
-                        // Show beautiful confirmation modal instead of ugly browser confirm
-                        document.getElementById('confirmCompanyName').textContent = app.company;
-                        currentJobId = parseInt(app.jobId);
-                        currentCompany = app.company;
-                        openModal('confirmApplyModal');
-                    }, 500); // Small delay so focus event settles
-                }
-            }
-        });
+    <!-- STAT STRIP -->
+    <div class="stat-strip">
+      <div class="stat-cell">
+        <div class="sc-label">Tracked</div>
+        <div class="sc-val">{{ stats.total_jobs }}</div>
+        <div class="sc-sub">total jobs</div>
+      </div>
+      <div class="stat-cell">
+        <div class="sc-label">Unreviewed</div>
+        <div class="sc-val g">{{ (top_matches|length + great_matches|length + good_matches|length) }}</div>
+        <div class="sc-sub">new matches</div>
+      </div>
+      <div class="stat-cell">
+        <div class="sc-label">Applied</div>
+        <div class="sc-val">{{ stats.applied }}</div>
+        <div class="sc-sub">sent</div>
+      </div>
+      <div class="stat-cell">
+        <div class="sc-label">Interviews</div>
+        <div class="sc-val {% if stats.interviews > 0 %}g{% endif %}">{{ stats.interviews }}</div>
+        <div class="sc-sub">in pipeline</div>
+      </div>
+      <div class="stat-cell">
+        <div class="sc-label">Offers</div>
+        <div class="sc-val {% if stats.offers > 0 %}y{% endif %}">{{ stats.offers }}</div>
+        <div class="sc-sub">received</div>
+      </div>
+      <div class="stat-cell">
+        <div class="sc-label">Response</div>
+        <div class="sc-val">{{ "%.0f"|format(stats.response_rate) }}%</div>
+        <div class="sc-sub">rate</div>
+      </div>
+    </div>
 
-        function confirmApplied(didApply) {
-            closeModal('confirmApplyModal');
-            
-            if (didApply) {
-                // Auto-fill the application modal
-                const cvInput = document.getElementById('cvVersion');
-                cvInput.value = `${currentCompany.replace(/\s+/g, '_')}_Resume.pdf`;
-                
-                setTimeout(() => {
-                    openModal('applyModal');
-                }, 300);
-            }
-            
-            // Clear the pending application either way
-            localStorage.removeItem('pendingApplication');
-        }
+    <!-- COMMAND BAR -->
+    <div class="cmdbar">
+      <div class="cmd-search">
+        <span class="cmd-icon">⌕</span>
+        <input id="searchFilter" type="text" placeholder="Search title, company, skill…">
+      </div>
+      <select id="regionFilter" class="cmd-sel">
+        <option value="all">All regions</option>
+        <option value="australia">🇦🇺 Australia</option>
+        <option value="remote">🌐 Remote</option>
+        <option value="united states">🇺🇸 United States</option>
+        <option value="london">🇬🇧 London</option>
+        <option value="europe">🇪🇺 Europe</option>
+        <option value="canada">🇨🇦 Canada</option>
+        <option value="singapore">🇸🇬 Singapore</option>
+      </select>
+      <select id="sourceFilter" class="cmd-sel">
+        <option value="all">All sources</option>
+        <option value="linkedin">LinkedIn</option>
+        <option value="builtin">BuiltIn</option>
+        <option value="yc_jobs">Y Combinator</option>
+      </select>
+      <select id="visaFilter" class="cmd-sel">
+        <option value="all">All visa</option>
+        <option value="au_citizen_ok">AU citizen ok</option>
+        <option value="explicit">Sponsored</option>
+        <option value="excluded">Excluded</option>
+      </select>
+      <div class="cmd-sep"></div>
+      <button id="resetFilters" class="btn btn-ghost">Reset</button>
+      <div class="cmd-count"><span id="visibleCount">{{ (top_matches|length + great_matches|length + good_matches|length) }}</span> visible</div>
+    </div>
 
-        function markApplied(jobId, company) {
-            console.log('markApplied called:', jobId, company);
-            currentJobId = jobId;
-            currentCompany = company;
-            try {
-                const cvInput = document.getElementById('cvVersion');
-                console.log('cvVersion element:', cvInput);
-                cvInput.value = `${company.replace(/\s+/g, '_')}_Resume.pdf`;
-                console.log('Opening modal...');
-                openModal('applyModal');
-            } catch (error) {
-                console.error('Error in markApplied:', error);
-                alert('Error: ' + error.message);
-            }
-        }
+    <!-- TABLE HEADER -->
+    <div class="tbl-head">
+      <div class="th">Score</div>
+      <div class="th">Role · Company</div>
+      <div class="th">Location</div>
+      <div class="th">Visa</div>
+      <div class="th">Seniority</div>
+      <div class="th">Matches</div>
+      <div class="th" style="text-align:right">Actions</div>
+    </div>
 
-        function updateStatus(jobId) {
-            console.log('updateStatus called:', jobId);
-            currentJobId = jobId;
-            openModal('statusModal');
-        }
+    <!-- ── IMMEDIATE TIER (≥82) ─────────────────────────────────────── -->
+    {% set immediate = top_matches | selectattr('fit_score', 'ge', 82) | list %}
+    {% if immediate %}
+    <div class="tier-bar tier-imm">
+      <div class="tier-dot"></div>
+      <span class="tier-name">Immediate</span>
+      <span class="tier-chip">{{ immediate|length }}</span>
+      <span class="tier-hint">Email alert fired · Apply today</span>
+    </div>
+    {% for job in immediate %}
+      {% include 'job_card.html' %}
+    {% endfor %}
+    {% endif %}
 
-        function openModal(modalId) {
-            console.log('openModal called:', modalId);
-            const modal = document.getElementById(modalId);
-            console.log('Modal element:', modal);
-            if (modal) {
-                modal.classList.add('active');
-                console.log('Modal should now be visible');
-            } else {
-                console.error('Modal not found:', modalId);
-                alert('Modal not found: ' + modalId);
-            }
-        }
+    <!-- ── DIGEST TIER (65–81) ──────────────────────────────────────── -->
+    {% set digest = (top_matches | selectattr('fit_score', 'lt', 82) | list) + great_matches %}
+    {% if digest %}
+    <div class="tier-bar tier-dig">
+      <div class="tier-dot"></div>
+      <span class="tier-name">Digest</span>
+      <span class="tier-chip">{{ digest|length }}</span>
+      <span class="tier-hint">Strong matches · Review at next check-in</span>
+    </div>
+    {% for job in digest %}
+      {% include 'job_card.html' %}
+    {% endfor %}
+    {% endif %}
 
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
+    <!-- ── ON WATCH (50–64) ─────────────────────────────────────────── -->
+    {% if good_matches %}
+    <div class="tier-bar tier-wtch">
+      <div class="tier-dot"></div>
+      <span class="tier-name">On watch</span>
+      <span class="tier-chip">{{ good_matches|length }}</span>
+      <span class="tier-hint">Stored · No alert sent</span>
+    </div>
+    {% for job in good_matches %}
+      {% include 'job_card.html' %}
+    {% endfor %}
+    {% endif %}
 
-        async function submitApplied() {
-            const cvVersion = document.getElementById('cvVersion').value;
-            const method = document.getElementById('appMethod').value;
-            
-            try {
-                const response = await fetch('/api/mark_applied', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        job_id: currentJobId,
-                        cv_version: cvVersion,
-                        method: method
-                    })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    showToast(' Marked as applied!');
-                    closeModal('applyModal');
-                    setTimeout(() => location.reload(), 700);
-                } else {
-                    showToast('Error: ' + (result.error || 'Could not mark applied'));
-                }
-            } catch (err) {
-                showToast('Network error when marking applied');
-            }
-        }
+    <!-- EMPTY STATE -->
+    <div id="emptyState" class="empty" {% if top_matches or great_matches or good_matches %}style="display:none"{% endif %}>
+      <div class="empty-icon">//</div>
+      <h3>No matches yet</h3>
+      <p>Trigger a scan or wait for the next scheduled run (every 4 hours).</p>
+    </div>
 
-        async function submitStatus() {
-            const status = document.getElementById('newStatus').value;
-            const notes = document.getElementById('statusNotes').value;
-            
-            try {
-                const response = await fetch('/api/update_status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        job_id: currentJobId,
-                        status: status,
-                        notes: notes
-                    })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    showToast(` Updated to ${status}!`);
-                    closeModal('statusModal');
-                    setTimeout(() => location.reload(), 700);
-                } else {
-                    showToast('Error: ' + (result.error || 'Could not update status'));
-                }
-            } catch (err) {
-                showToast('Network error when updating status');
-            }
-        }
+  </main>
+</div>
 
-        function showToast(message) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.classList.add('active');
-            setTimeout(() => toast.classList.remove('active'), 2500);
-        }
+<!-- ── MARK APPLIED MODAL ─────────────────────────────────────────────── -->
+<div id="applyModal" class="modal">
+  <div class="mbox">
+    <div class="mhead">Mark as Applied <span class="mclose" onclick="closeModal('applyModal')">✕</span></div>
+    <div class="frow">
+      <label class="flabel">CV used</label>
+      <input class="finput" type="text" id="cvVersion" placeholder="e.g. HJH_CV.pdf">
+    </div>
+    <div class="frow">
+      <label class="flabel">Method</label>
+      <select class="fselect" id="appMethod">
+        <option value="linkedin">LinkedIn</option>
+        <option value="company_site">Company Website</option>
+        <option value="email">Email</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="mfooter">
+      <button class="btn btn-green" onclick="submitApplied()">Confirm</button>
+      <button class="btn btn-ghost" onclick="closeModal('applyModal')">Cancel</button>
+    </div>
+  </div>
+</div>
 
-        // View cover letter
-        let currentCoverLetter = '';
-        let currentCoverLetterJobId = null;
-        let saveTimeout = null;
-        
-        async function viewCoverLetter(jobId, company, title) {
-            console.log('Fetching cover letter for job', jobId);
-            currentCoverLetterJobId = jobId;
-            
-            const contentTextarea = document.getElementById('coverLetterContent');
-            const editArea = document.getElementById('coverLetterEditArea');
-            const emptyState = document.getElementById('coverLetterEmptyState');
-            const loadingState = document.getElementById('coverLetterLoadingState');
-            const pdfBtn = document.getElementById('downloadPDFBtn');
-            const copyBtn = document.getElementById('copyCoverLetterBtn');
-            const regenBtn = document.getElementById('regenerateCoverLetterBtn');
-            
-            // Reset UI
-            editArea.style.display = 'none';
-            emptyState.style.display = 'none';
-            loadingState.style.display = 'none';
-            pdfBtn.style.display = 'none';
-            copyBtn.style.display = 'none';
-            regenBtn.style.display = 'none';
-            
-            openModal('coverLetterModal');
-            
-            // Always show empty state first with generate button
-            // This allows users to generate fresh cover letters
-            emptyState.style.display = 'block';
-            
-            // Optional: Check if old cover letter exists in background
-            try {
-                const response = await fetch(`/api/cover_letter/${jobId}`);
-                const result = await response.json();
-                
-                if (result.success && result.cover_letter) {
-                    // Found old cover letter - show it but keep generate button visible
-                    console.log('Found existing cover letter, but user can regenerate');
-                    // You can optionally auto-load it here if you want
-                    // For now, just keep the generate button visible
-                }
-            } catch (err) {
-                console.log('No existing cover letter found (or error):', err);
-            }
-        }
-        
-        async function generateCoverLetter() {
-            if (!currentCoverLetterJobId) {
-                showToast(' No job selected');
-                return;
-            }
-            
-            const loadingState = document.getElementById('coverLetterLoadingState');
-            const emptyState = document.getElementById('coverLetterEmptyState');
-            const editArea = document.getElementById('coverLetterEditArea');
-            const contentTextarea = document.getElementById('coverLetterContent');
-            
-            // Show loading
-            emptyState.style.display = 'none';
-            editArea.style.display = 'none';
-            loadingState.style.display = 'block';
-            
-            try {
-                const response = await fetch(`/api/cover_letter/generate/${currentCoverLetterJobId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const result = await response.json();
-                
-                loadingState.style.display = 'none';
-                
-                if (result.success) {
-                    currentCoverLetter = result.cover_letter;
-                    contentTextarea.value = result.cover_letter;
-                    editArea.style.display = 'block';
-                    document.getElementById('downloadPDFBtn').style.display = 'inline-block';
-                    document.getElementById('copyCoverLetterBtn').style.display = 'inline-block';
-                    document.getElementById('regenerateCoverLetterBtn').style.display = 'inline-block';
-                    updateWordCount();
-                    showToast(' Cover letter generated!');
-                } else {
-                    emptyState.style.display = 'block';
-                    showToast(' Error: ' + (result.error || 'Could not generate cover letter'));
-                }
-            } catch (err) {
-                console.error('Error generating cover letter:', err);
-                loadingState.style.display = 'none';
-                emptyState.style.display = 'block';
-                showToast(' Network error when generating cover letter');
-            }
-        }
-        
-        // Auto-save on edit with debounce
-        document.addEventListener('DOMContentLoaded', function() {
-            const textarea = document.getElementById('coverLetterContent');
-            textarea.addEventListener('input', function() {
-                currentCoverLetter = this.value;
-                updateWordCount();
-                
-                // Debounce auto-save
-                clearTimeout(saveTimeout);
-                saveTimeout = setTimeout(() => {
-                    saveCoverLetter();
-                }, 1500); // Save 1.5 seconds after user stops typing
-            });
-        });
-        
-        async function saveCoverLetter() {
-            if (!currentCoverLetterJobId || !currentCoverLetter) return;
-            
-            try {
-                const response = await fetch(`/api/cover_letter/save/${currentCoverLetterJobId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cover_letter: currentCoverLetter })
-                });
-                const result = await response.json();
-                
-                if (result.success) {
-                    console.log('Cover letter auto-saved');
-                } else {
-                    console.error('Error saving cover letter:', result.error);
-                }
-            } catch (err) {
-                console.error('Network error when saving cover letter:', err);
-            }
-        }
-        
-        function updateWordCount() {
-            const text = currentCoverLetter || '';
-            const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
-            const chars = text.length;
-            document.getElementById('wordCount').textContent = `${words} words`;
-            document.getElementById('charCount').textContent = `${chars} characters`;
-        }
+<!-- ── UPDATE STATUS MODAL ───────────────────────────────────────────── -->
+<div id="statusModal" class="modal">
+  <div class="mbox">
+    <div class="mhead">Update Status <span class="mclose" onclick="closeModal('statusModal')">✕</span></div>
+    <div class="frow">
+      <label class="flabel">Status</label>
+      <select class="fselect" id="newStatus">
+        <option value="applied">Applied</option>
+        <option value="phone_screen">Phone screen</option>
+        <option value="interview">Interview</option>
+        <option value="offer">Offer</option>
+        <option value="rejected">Rejected</option>
+        <option value="withdrawn">Withdrawn</option>
+      </select>
+    </div>
+    <div class="frow">
+      <label class="flabel">Notes</label>
+      <textarea class="ftextarea" id="statusNotes" placeholder="Add notes…"></textarea>
+    </div>
+    <div class="mfooter">
+      <button class="btn btn-green" onclick="submitStatus()">Update</button>
+      <button class="btn btn-ghost" onclick="closeModal('statusModal')">Cancel</button>
+    </div>
+  </div>
+</div>
 
-        // View job details
-        async function viewJobDetails(jobId, company, title) {
-            console.log('Viewing job details for', jobId);
-            
-            try {
-                const response = await fetch(`/api/job/${jobId}`);
-                const result = await response.json();
-                
-                if (result.success) {
-                    const job = result.job;
-                    
-                    // Populate modal
-                    document.getElementById('jobDetailsTitle').textContent = job.title;
-                    document.getElementById('jobDetailsCompany').textContent = job.company;
-                    document.getElementById('jobDetailsLocation').textContent = job.location || 'Not specified';
-                    document.getElementById('jobDetailsScore').textContent = `${job.fit_score}%`;
-                    document.getElementById('jobDetailsReasoning').textContent = job.reasoning || 'No reasoning available';
-                    
-                    // Format description to be more readable
-                    let description = job.description || 'No description available';
-                    // Limit to first 1500 characters for readability
-                    if (description.length > 1500) {
-                        description = description.substring(0, 1500) + '...';
-                    }
-                    document.getElementById('jobDetailsDescription').textContent = description;
-                    
-                    document.getElementById('jobDetailsApplyBtn').href = job.url;
-                    
-                    openModal('jobDetailsModal');
-                } else {
-                    showToast(' Error loading job details');
-                }
-            } catch (err) {
-                console.error('Error fetching job details:', err);
-                showToast(' Network error loading job details');
-            }
-        }
+<!-- ── COVER LETTER MODAL ────────────────────────────────────────────── -->
+<div id="coverLetterModal" class="modal">
+  <div class="mbox wide">
+    <div class="mhead">Cover Letter <span class="mclose" onclick="closeModal('coverLetterModal')">✕</span></div>
+    <div class="cl-body" id="coverLetterContent">Loading…</div>
+    <div class="mfooter">
+      <button class="btn btn-green" onclick="copyCoverLetter()">Copy</button>
+      <button class="btn btn-ghost" onclick="closeModal('coverLetterModal')">Close</button>
+    </div>
+  </div>
+</div>
 
-        function downloadCoverLetterPDF() {
-            if (!currentCoverLetterJobId) {
-                showToast(' No cover letter available for download');
-                return;
-            }
-            
-            // Create a temporary link to download the PDF
-            const link = document.createElement('a');
-            link.href = `/api/cover_letter/${currentCoverLetterJobId}/pdf`;
-            link.download = `cover_letter_job_${currentCoverLetterJobId}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            showToast(' Downloading PDF...');
-        }
+<!-- ── CONFIRM APPLIED MODAL ─────────────────────────────────────────── -->
+<div id="confirmApplyModal" class="modal">
+  <div class="mbox" style="text-align:center">
+    <div style="font-size:32px;margin-bottom:10px">✓</div>
+    <div class="mhead" style="justify-content:center;border:none;margin-bottom:8px">Did you apply to <span id="confirmCompanyName" style="color:var(--green)"></span>?</div>
+    <p style="font-size:12px;color:var(--text-3);margin-bottom:16px">Confirm so we can track your pipeline.</p>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn btn-green" onclick="confirmApplied(true)">Yes, applied</button>
+      <button class="btn btn-ghost" onclick="confirmApplied(false)">Not yet</button>
+    </div>
+  </div>
+</div>
 
-        function copyCoverLetter() {
-            if (!currentCoverLetter) {
-                showToast(' No cover letter to copy');
-                return;
-            }
-            
-            console.log('Attempting to copy cover letter, length:', currentCoverLetter.length);
-            
-            // Try modern clipboard API first
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(currentCoverLetter).then(() => {
-                    showToast(' Copied to clipboard!');
-                    console.log('Successfully copied via clipboard API');
-                }).catch(err => {
-                    console.error('Clipboard API failed:', err);
-                    // Fallback to old method
-                    fallbackCopy(currentCoverLetter);
-                });
-            } else {
-                // Use fallback for older browsers
-                fallbackCopy(currentCoverLetter);
-            }
-        }
-        
-        function fallbackCopy(text) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.select();
-            
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    showToast(' Copied to clipboard!');
-                    console.log('Successfully copied via fallback method');
-                } else {
-                    showToast(' Could not copy to clipboard');
-                    console.error('Fallback copy failed');
-                }
-            } catch (err) {
-                showToast(' Could not copy to clipboard');
-                console.error('Fallback copy error:', err);
-            }
-            
-            document.body.removeChild(textArea);
-        }
+<div id="toast" class="toast"></div>
 
-        // Run scrape now
-        const runScrapeBtn = document.getElementById('runScrapeBtn');
-        async function triggerScrape() {
-            if (!runScrapeBtn) return;
-            runScrapeBtn.disabled = true;
-            runScrapeBtn.textContent = 'Running...';
-            
-            // Get current mode
-            const mode = new URLSearchParams(window.location.search).get('mode') || 
-                        localStorage.getItem('jobMode') || 'tech';
-            
-            try {
-                const res = await fetch(`/api/run_scrape?mode=${mode}`, { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    showToast(data.message || 'Scrape started. Refresh in ~30s.');
-                } else {
-                    showToast('Scrape already running');
-                }
-            } catch (err) {
-                showToast('Error starting scrape');
-            } finally {
-                runScrapeBtn.disabled = false;
-                runScrapeBtn.textContent = 'Run Scrape Now';
-            }
-        }
+<script>
+let currentJobId = null;
+let currentCompany = null;
+let currentCoverLetter = '';
 
-        // Auto-submit job with review
-        async function autoSubmitJob(jobId, sourceId, company) {
-            // Step 1: Prepare application (generate cover letter + PDF)
-            showToast(' Preparing application...');
+/* ── EXPAND/COLLAPSE ROW ─────────────────────────────────────────────── */
+document.querySelectorAll('.jrow-main').forEach(row => {
+  row.addEventListener('click', e => {
+    if (e.target.closest('.btn') || e.target.tagName === 'A') return;
+    const jrow = row.closest('.jrow');
+    const wasOpen = jrow.classList.contains('open');
+    document.querySelectorAll('.jrow.open').forEach(r => r.classList.remove('open'));
+    if (!wasOpen) jrow.classList.add('open');
+  });
+});
 
-            try {
-                const prepareRes = await fetch(`/api/prepare_application/${jobId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
+/* ── APPLY TRACKING ──────────────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const link = e.target.closest('.apply-ext');
+  if (link) {
+    localStorage.setItem('pendingApp', JSON.stringify({
+      jobId: link.dataset.jobId, company: link.dataset.company, ts: Date.now()
+    }));
+  }
+});
 
-                const prepareData = await prepareRes.json();
+window.addEventListener('focus', () => {
+  const raw = localStorage.getItem('pendingApp');
+  if (!raw) return;
+  const p = JSON.parse(raw);
+  if (Date.now() - p.ts < 600000) {
+    setTimeout(() => {
+      document.getElementById('confirmCompanyName').textContent = p.company;
+      currentJobId = +p.jobId; currentCompany = p.company;
+      openModal('confirmApplyModal');
+    }, 600);
+  }
+});
 
-                if (!prepareData.success) {
-                    showToast(` Error: ${prepareData.error}`);
-                    return;
-                }
+function confirmApplied(yes) {
+  closeModal('confirmApplyModal');
+  if (yes) {
+    document.getElementById('cvVersion').value = 'HJH CV.pdf';
+    setTimeout(() => openModal('applyModal'), 300);
+  }
+  localStorage.removeItem('pendingApp');
+}
 
-                // Step 2: Show review modal with cover letter and PDF
-                showApplicationReview(jobId, company, prepareData.cover_letter, prepareData.pdf_filename);
+/* ── MODALS ──────────────────────────────────────────────────────────── */
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+window.addEventListener('click', e => { if (e.target.classList.contains('modal')) e.target.classList.remove('active'); });
 
-            } catch (err) {
-                console.error('Prepare application error:', err);
-                showToast(' Error preparing application');
-            }
-        }
+function markApplied(jobId, company) {
+  currentJobId = jobId; currentCompany = company;
+  document.getElementById('cvVersion').value = 'HJH CV.pdf';
+  openModal('applyModal');
+}
 
-        // Show application review modal
-        function showApplicationReview(jobId, company, coverLetter, pdfFilename) {
-            const modal = document.getElementById('applicationReviewModal');
-            const coverLetterTextarea = document.getElementById('reviewCoverLetterText');
-            const pdfPreview = document.getElementById('pdfPreviewFrame');
-            const approveBtn = document.getElementById('approveApplicationBtn');
+function updateStatus(jobId) {
+  currentJobId = jobId;
+  openModal('statusModal');
+}
 
-            // Populate modal
-            document.getElementById('reviewCompany').textContent = company;
-            coverLetterTextarea.value = coverLetter;
-            pdfPreview.src = `/api/cover_letter/${jobId}/pdf?filename=${pdfFilename}`;
+async function submitApplied() {
+  const res = await fetch('/api/mark_applied', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ job_id: currentJobId, cv_version: document.getElementById('cvVersion').value, method: document.getElementById('appMethod').value })
+  });
+  const d = await res.json();
+  if (d.success) { showToast('Marked as applied'); closeModal('applyModal'); setTimeout(() => location.reload(), 700); }
+  else showToast('Error: ' + (d.error || 'failed'));
+}
 
-            // Setup approve button
-            approveBtn.onclick = () => approveAndSubmit(jobId, company);
+async function submitStatus() {
+  const res = await fetch('/api/update_status', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ job_id: currentJobId, status: document.getElementById('newStatus').value, notes: document.getElementById('statusNotes').value })
+  });
+  const d = await res.json();
+  if (d.success) { showToast('Status updated'); closeModal('statusModal'); setTimeout(() => location.reload(), 700); }
+  else showToast('Error: ' + (d.error || 'failed'));
+}
 
-            // Open modal
-            openModal('applicationReviewModal');
-        }
+/* ── COVER LETTER ────────────────────────────────────────────────────── */
+async function viewCoverLetter(jobId) {
+  const box = document.getElementById('coverLetterContent');
+  box.textContent = 'Loading…';
+  openModal('coverLetterModal');
+  const res = await fetch(`/api/cover_letter/${jobId}`);
+  const d = await res.json();
+  if (d.success) { currentCoverLetter = d.cover_letter; box.textContent = d.cover_letter; }
+  else box.textContent = 'No cover letter found for this job yet.';
+}
 
-        // Approve and submit application
-        async function approveAndSubmit(jobId, company) {
-            closeModal('applicationReviewModal');
-            showToast(' Submitting application...');
+function copyCoverLetter() {
+  if (!currentCoverLetter) return showToast('Nothing to copy');
+  navigator.clipboard.writeText(currentCoverLetter)
+    .then(() => showToast('Copied to clipboard'))
+    .catch(() => showToast('Copy failed'));
+}
 
-            try {
-                const res = await fetch('/api/auto_submit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ job_id: jobId })
-                });
+/* ── SCRAPE ──────────────────────────────────────────────────────────── */
+document.getElementById('runScrapeBtn').addEventListener('click', async function() {
+  this.disabled = true;
+  this.innerHTML = '<span class="spin">↻</span> Scanning…';
+  try {
+    const res = await fetch('/api/run_scrape', { method: 'POST' });
+    const d = await res.json();
+    showToast(d.success ? 'Scan started — refresh in ~60s' : 'Already running');
+  } catch { showToast('Error starting scan'); }
+  finally { setTimeout(() => { this.disabled = false; this.textContent = '▶ Run scan'; }, 3000); }
+});
 
-                const data = await res.json();
+/* ── DELEGATION ──────────────────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const b = t => e.target.closest(t);
 
-                if (data.success) {
-                    if (data.status === 'submitted') {
-                        showToast(` Application submitted to ${company}!`);
-                        setTimeout(() => {
-                            markApplied(jobId, company);
-                        }, 1000);
-                    } else if (data.status === 'ready_for_review') {
-                        showToast(` Application filled! Review and submit manually.`);
-                    } else {
-                        showToast(` ${data.message || 'Manual application required'}`);
-                    }
-                } else {
-                    showToast(` Auto-submit failed: ${data.error || 'Unknown error'}`);
-                }
-            } catch (err) {
-                console.error('Auto-submit error:', err);
-                showToast(' Error during auto-submit');
-            }
-        }
+  if (b('.mark-applied-btn'))   { const el = b('.mark-applied-btn');   markApplied(+el.dataset.jobId, el.dataset.company); }
+  if (b('.update-status-btn'))  { updateStatus(+b('.update-status-btn').dataset.jobId); }
+  if (b('.view-cl-btn'))        { viewCoverLetter(+b('.view-cl-btn').dataset.jobId); }
 
-        // Run scrape initialization
-        if (runScrapeBtn) {
-            runScrapeBtn.addEventListener('click', triggerScrape);
-        }
+  if (b('.hide-btn')) {
+    const el = b('.hide-btn');
+    const card = el.closest('.jrow');
+    let hidden = JSON.parse(localStorage.getItem('hiddenJobs') || '[]');
+    hidden.push(+el.dataset.jobId);
+    localStorage.setItem('hiddenJobs', JSON.stringify(hidden));
+    card.style.display = 'none';
+    updateCount();
+    showToast('Hidden');
+  }
+});
 
-        // Filters
-        const searchFilter = document.getElementById('searchFilter');
-        const locationFilter = document.getElementById('locationFilter');
-        const sourceFilter = document.getElementById('sourceFilter');
-        const resetFilters = document.getElementById('resetFilters');
-        const emptyState = document.getElementById('emptyState');
+/* ── FILTERS ─────────────────────────────────────────────────────────── */
+const $search = document.getElementById('searchFilter');
+const $region = document.getElementById('regionFilter');
+const $source = document.getElementById('sourceFilter');
+const $visa   = document.getElementById('visaFilter');
 
-        function applyFilters() {
-            const query = (searchFilter.value || '').toLowerCase();
-            const location = locationFilter.value;
-            const source = sourceFilter.value;
-            let visible = 0;
+function applyFilters() {
+  const q   = $search.value.toLowerCase();
+  const reg = $region.value;
+  const src = $source.value;
+  const vis = $visa.value;
+  let n = 0;
 
-            document.querySelectorAll('.job-card').forEach(card => {
-                const text = card.dataset.text || '';
-                const cardLocation = (card.querySelector('.job-meta .meta-item')?.textContent || '').toLowerCase();
-                const cardSource = card.dataset.source || (card.querySelector('.job-meta .meta-item:nth-child(3)')?.textContent || '').toLowerCase();
-                const isRemote = card.dataset.remote === 'true';
+  document.querySelectorAll('.jrow').forEach(row => {
+    const text   = (row.dataset.text || '').toLowerCase();
+    const loc    = (row.dataset.loc  || '').toLowerCase();
+    const source = (row.dataset.src  || '').toLowerCase();
+    const visa   = (row.dataset.visa || '').toLowerCase();
 
-                const matchesQuery = !query || text.includes(query);
-                const matchesLocation = location === 'all' || 
-                                       (location === 'remote' && isRemote) ||
-                                       cardLocation.includes(location.toLowerCase());
-                const matchesSource = source === 'all' || cardSource.includes(source);
+    const ok = (!q   || text.includes(q))
+            && (reg === 'all' || loc.includes(reg.toLowerCase()))
+            && (src === 'all' || source.includes(src))
+            && (vis === 'all' || visa.includes(vis));
 
-                const show = matchesQuery && matchesLocation && matchesSource;
-                card.style.display = show ? 'block' : 'none';
-                if (show) visible += 1;
-            });
+    row.style.display = ok ? '' : 'none';
+    if (ok) n++;
+  });
 
-            document.getElementById('visibleCount').textContent = visible;
-            
-            // Show/hide section titles based on visible cards in each section
-            document.querySelectorAll('.section-title').forEach(title => {
-                const nextElement = title.nextElementSibling;
-                if (nextElement && nextElement.classList.contains('jobs-grid')) {
-                    const visibleInSection = Array.from(nextElement.querySelectorAll('.job-card'))
-                        .filter(card => card.style.display !== 'none').length;
-                    title.style.display = visibleInSection > 0 ? 'flex' : 'none';
-                }
-            });
-            
-            emptyState.style.display = visible ? 'none' : 'block';
-        }
+  document.getElementById('visibleCount').textContent = n;
+  document.getElementById('emptyState').style.display = n ? 'none' : 'block';
+}
 
-        searchFilter.addEventListener('input', applyFilters);
-        locationFilter.addEventListener('change', applyFilters);
-        sourceFilter.addEventListener('change', applyFilters);
-        resetFilters.addEventListener('click', () => {
-            searchFilter.value = '';
-            locationFilter.value = 'all';
-            sourceFilter.value = 'all';
-            applyFilters();
-        });
+$search.addEventListener('input', applyFilters);
+$region.addEventListener('change', applyFilters);
+$source.addEventListener('change', applyFilters);
+$visa.addEventListener('change', applyFilters);
 
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.classList.remove('active');
-            }
-        }
+document.getElementById('resetFilters').addEventListener('click', () => {
+  $search.value = ''; $region.value = 'all'; $source.value = 'all'; $visa.value = 'all';
+  applyFilters();
+});
 
-        // Event delegation for mark applied buttons
-        document.addEventListener('click', function(e) {
-            if (e.target.closest('.mark-applied-btn')) {
-                const btn = e.target.closest('.mark-applied-btn');
-                const jobId = parseInt(btn.dataset.jobId);
-                const company = btn.dataset.company;
-                markApplied(jobId, company);
-            }
-            
-            if (e.target.closest('.update-status-btn')) {
-                const btn = e.target.closest('.update-status-btn');
-                const jobId = parseInt(btn.dataset.jobId);
-                updateStatus(jobId);
-            }
-            
-            if (e.target.closest('.auto-submit-btn')) {
-                const btn = e.target.closest('.auto-submit-btn');
-                const jobId = parseInt(btn.dataset.jobId);
-                const sourceId = btn.dataset.sourceId;
-                const company = btn.dataset.company;
-                autoSubmitJob(jobId, sourceId, company);
-            }
-            
-            if (e.target.closest('.view-cover-letter-btn')) {
-                const btn = e.target.closest('.view-cover-letter-btn');
-                const jobId = parseInt(btn.dataset.jobId);
-                const company = btn.dataset.company;
-                const title = btn.dataset.title;
-                viewCoverLetter(jobId, company, title);
-            }
-            
-            if (e.target.closest('.hide-job-btn')) {
-                const btn = e.target.closest('.hide-job-btn');
-                const jobId = parseInt(btn.dataset.jobId);
-                hideJob(jobId, btn);
-            }
-        });
+/* ── HIDDEN JOBS ─────────────────────────────────────────────────────── */
+(function applyHidden() {
+  const hidden = JSON.parse(localStorage.getItem('hiddenJobs') || '[]');
+  hidden.forEach(id => {
+    document.querySelectorAll(`.hide-btn[data-job-id="${id}"]`).forEach(b => {
+      b.closest('.jrow').style.display = 'none';
+    });
+  });
+  updateCount();
+})();
 
-        // Hide job (client-side only, persists in localStorage)
-        function hideJob(jobId, button) {
-            const card = button.closest('.job-card');
-            card.style.opacity = '0.5';
-            card.style.pointerEvents = 'none';
-            
-            // Store hidden jobs in localStorage
-            let hiddenJobs = JSON.parse(localStorage.getItem('hiddenJobs') || '[]');
-            if (!hiddenJobs.includes(jobId)) {
-                hiddenJobs.push(jobId);
-                localStorage.setItem('hiddenJobs', JSON.stringify(hiddenJobs));
-            }
-            
-            setTimeout(() => {
-                card.style.display = 'none';
-                updateVisibleCount();
-            }, 300);
-            
-            showToast(' Job hidden');
-        }
+function updateCount() {
+  const n = [...document.querySelectorAll('.jrow')].filter(r => r.style.display !== 'none').length;
+  document.getElementById('visibleCount').textContent = n;
+}
 
-        // Auto-submit job application
-        async function autoSubmitJob(jobId, sourceId, company) {
-            if (!confirm(`Auto-submit application to ${company}?\n\nThis will:\n• Use your generated CV\n• Fill out the application form\n• Submit automatically (or pause for review based on your settings)`)) {
-                return;
-            }
-            
-            showToast('⚡ Starting auto-submit...');
-            
-            try {
-                // Find the application ID (format: app_TIMESTAMP_SOURCEID_*)
-                const appId = `app_${new Date().toISOString().split('T')[0].replace(/-/g, '')}_${sourceId}`;
-                
-                // Open the auto-submit endpoint in new tab
-                window.open(`/api/auto_submit_job?app_id=${appId}`, '_blank');
-                
-                // Mark as applied after a delay
-                setTimeout(() => {
-                    showToast(' Auto-submit initiated - check the new tab');
-                }, 2000);
-                
-            } catch (error) {
-                console.error('Auto-submit error:', error);
-                showToast(' Auto-submit failed: ' + error.message);
-            }
-        }
-
-        // Hide already-hidden jobs on page load
-        function applyHiddenJobs() {
-            const hiddenJobs = JSON.parse(localStorage.getItem('hiddenJobs') || '[]');
-            hiddenJobs.forEach(jobId => {
-                const card = document.querySelector(`.hide-job-btn[data-job-id="${jobId}"]`)?.closest('.job-card');
-                if (card) {
-                    card.style.display = 'none';
-                }
-            });
-            updateVisibleCount();
-        }
-
-        function updateVisibleCount() {
-            const visible = Array.from(document.querySelectorAll('.job-card'))
-                .filter(card => card.style.display !== 'none').length;
-            const countEl = document.getElementById('visibleCount');
-            if (countEl) countEl.textContent = visible;
-        }
-
-        window.onload = applyFilters;
-        
-        // Apply hidden jobs on load
-        window.addEventListener('DOMContentLoaded', applyHiddenJobs);
-
-        // Mode switching logic
-        document.querySelectorAll('.mode-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const mode = this.dataset.mode;
-                
-                // Update active state
-                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                
-                // Save preference
-                localStorage.setItem('jobMode', mode);
-                
-                // Reload with mode parameter
-                const url = new URL(window.location);
-                url.searchParams.set('mode', mode);
-                window.location.href = url.toString();
-            });
-        });
-
-        // Restore mode on load
-        document.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const mode = urlParams.get('mode') || localStorage.getItem('jobMode') || 'tech';
-            
-            document.querySelectorAll('.mode-btn').forEach(btn => {
-                if (btn.dataset.mode === mode) {
-                    btn.classList.add('active');
-                } else {
-                    btn.classList.remove('active');
-                }
-            });
-        });
-    </script>
+/* ── TOAST ───────────────────────────────────────────────────────────── */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), 2500);
+}
+</script>
 </body>
 </html>

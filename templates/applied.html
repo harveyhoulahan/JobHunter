@@ -1,66 +1,137 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>My Applications - JobHunter</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Applications · JobHunter</title>
+  <link rel="stylesheet" href="/static/style.css?v=3.0">
 </head>
 <body>
-    <div class="page">
-        <div class="header">
-            <div class="brand">JobHunter</div>
-            <div class="nav">
-                <a href="/">All Jobs</a>
-                <a href="/applied">My Applications</a>
-                <a href="/stats">Statistics</a>
-            </div>
-        </div>
+<div class="shell">
 
-        <section class="panel">
-            <div class="section-title">
-                <div>
-                    <h2>Application history</h2>
-                    <div class="subtle">Every role you’ve marked as applied lives here.</div>
-                </div>
-                <div class="pill">Applied: {{ jobs|length }}</div>
-            </div>
-
-            <div class="jobs-grid">
-                {% if jobs %}
-                    {% for job in jobs %}
-                    <div class="job-card">
-                        <div class="job-header">
-                            <div>
-                                <div class="job-title">{{ job.title }}</div>
-                                <div class="job-company">{{ job.company }}</div>
-                            </div>
-                            <div class="score-badge {% if job.fit_score >= 80 %}score-high{% elif job.fit_score >= 60 %}score-mid{% else %}score-low{% endif %}">
-                                {{ "%.1f"|format(job.fit_score) }}%
-                            </div>
-                        </div>
-
-                        <div class="job-meta">
-                            <span>📍 {{ job.location or 'Remote' }}</span>
-                            <span class="status-badge status-{{ job.status or 'applied' }}">
-                                {{ (job.status or 'applied').replace('_', ' ') }}
-                            </span>
-                            <span>📅 Applied {{ job.applied_date.strftime('%b %d, %Y') }}</span>
-                        </div>
-
-                        {% if job.cv_version %}
-                        <div class="meta-quiet">📄 CV: {{ job.cv_version }}</div>
-                        {% endif %}
-
-                        <div class="job-actions">
-                            <a href="{{ job.url }}" target="_blank" class="btn btn-primary btn-small">View job →</a>
-                            <a href="/jobs/{{ job.id }}" class="btn btn-outline btn-small">Details</a>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="empty-state">No applications yet. Start applying to jobs!</div>
-                {% endif %}
-            </div>
-        </section>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-logo">JH</div>
+      <span class="brand-name">JobHunter</span>
     </div>
+    <div class="topbar-pills">
+      <div class="t-pill"><span class="label">Applied</span><span class="val g">{{ jobs|length }}</span></div>
+      <div class="t-pill"><span class="label">View</span><span class="val">Application tracker</span></div>
+    </div>
+    <div class="topbar-end">
+      <a class="btn btn-outline" href="/">← Dashboard</a>
+      <a class="btn btn-ghost" href="/stats">Stats</a>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="sb-section">
+      <div class="sb-label">Views</div>
+      <a class="nav-link" href="/">All new jobs</a>
+      <a class="nav-link active" href="/applied">Applied <span class="nav-badge">{{ jobs|length }}</span></a>
+      <a class="nav-link" href="/stats">Statistics</a>
+      <a class="nav-link" href="/settings">Settings</a>
+      <a class="nav-link" href="/setup">Setup / Profile</a>
+    </div>
+    <div class="sb-section">
+      <div class="sb-label">Pipeline</div>
+      {% for slug, label in [('applied','Applied'),('phone_screen','Phone screen'),('interview','Interview'),('offer','Offer'),('rejected','Rejected')] %}
+        {% set n = jobs | selectattr('status','equalto',slug) | list | length %}
+        <div class="market-item">
+          <span class="mname">{{ label }}</span>
+          <span class="mcount">{{ n }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="stat-strip">
+      <div class="stat-cell"><div class="sc-label">Total sent</div><div class="sc-val">{{ jobs|length }}</div><div class="sc-sub">applications</div></div>
+      <div class="stat-cell"><div class="sc-label">Screening</div><div class="sc-val g">{{ jobs|selectattr('status','equalto','phone_screen')|list|length }}</div><div class="sc-sub">phone screens</div></div>
+      <div class="stat-cell"><div class="sc-label">Interviews</div><div class="sc-val g">{{ jobs|selectattr('status','equalto','interview')|list|length }}</div><div class="sc-sub">active</div></div>
+      <div class="stat-cell"><div class="sc-label">Offers</div><div class="sc-val y">{{ jobs|selectattr('status','equalto','offer')|list|length }}</div><div class="sc-sub">received</div></div>
+      <div class="stat-cell"><div class="sc-label">Rejected</div><div class="sc-val">{{ jobs|selectattr('status','equalto','rejected')|list|length }}</div><div class="sc-sub">closed</div></div>
+      <div class="stat-cell">
+        {% set total = jobs|length %}{% set active = jobs|selectattr('status','in',['phone_screen','interview','offer'])|list|length %}
+        <div class="sc-label">Pipeline rate</div>
+        <div class="sc-val">{% if total > 0 %}{{ "%.0f"|format(active/total*100) }}%{% else %}—{% endif %}</div>
+        <div class="sc-sub">in pipeline</div>
+      </div>
+    </div>
+
+    <div class="cmdbar">
+      <div class="cmd-search"><span class="cmd-icon">⌕</span><input id="appSearch" type="text" placeholder="Search title, company…"></div>
+      <select id="statusFilter" class="cmd-sel">
+        <option value="all">All statuses</option>
+        <option value="applied">Applied</option>
+        <option value="phone_screen">Phone screen</option>
+        <option value="interview">Interview</option>
+        <option value="offer">Offer</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button id="resetApp" class="btn btn-ghost">Reset</button>
+      <div class="cmd-count"><span id="appCount">{{ jobs|length }}</span> visible</div>
+    </div>
+
+    <div class="tbl-head" style="grid-template-columns:52px 1fr 120px 110px 130px 120px">
+      <div class="th">Score</div><div class="th">Role · Company</div><div class="th">Location</div>
+      <div class="th">CV used</div><div class="th">Status</div><div class="th">Applied date</div>
+    </div>
+
+    {% if jobs %}
+      {% for job in jobs %}
+        {% set score = job.fit_score|int %}
+        {% if score >= 82 %}{% set sr='sr-high' %}{% elif score >= 65 %}{% set sr='sr-mid' %}{% elif score >= 50 %}{% set sr='sr-low' %}{% else %}{% set sr='sr-poor' %}{% endif %}
+        {% set st = job.status|default('applied') %}
+        {% if st=='offer' %}{% set sc='st-offer' %}{% elif st=='interview' %}{% set sc='st-interview' %}{% elif st=='phone_screen' %}{% set sc='st-phone' %}{% elif st=='rejected' %}{% set sc='st-rejected' %}{% else %}{% set sc='st-applied' %}{% endif %}
+        <div class="jrow app-row" data-status="{{ st }}" data-text="{{ (job.title~' '~job.company)|lower }}">
+          <div class="jrow-main" style="grid-template-columns:52px 1fr 120px 110px 130px 120px;cursor:default">
+            <div class="col-score">
+              <svg class="score-ring {{ sr }}" viewBox="0 0 40 40">
+                <circle class="sr-bg" cx="20" cy="20" r="16"/>
+                <circle class="sr-fill" cx="20" cy="20" r="16" stroke-dasharray="{{ (score/100*100.53)|round(1) }} 100.53" stroke-dashoffset="25.1"/>
+                <text class="sr-txt" x="20" y="20" text-anchor="middle" dominant-baseline="central">{{ score }}</text>
+              </svg>
+            </div>
+            <div class="c-title">
+              <div class="ct-row1"><span class="job-title">{{ job.title }}</span><span class="applied-pip">✓ applied</span></div>
+              <div class="ct-row2"><span class="job-co">{{ job.company }}</span></div>
+            </div>
+            <div class="c-loc"><span class="loc-text">{{ job.location|default('—') }}</span></div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ job.cv_version|default('—') }}</div>
+            <div><span class="status-lbl {{ sc }}">{{ st.replace('_',' ')|title }}</span></div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-3)">{% if job.applied_date %}{{ job.applied_date.strftime('%d %b %Y') }}{% else %}—{% endif %}</div>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        <div class="empty-icon">//</div>
+        <h3>No applications yet</h3>
+        <p>Go back to the dashboard and start applying.</p>
+        <a class="btn btn-green" href="/" style="margin-top:12px">← Dashboard</a>
+      </div>
+    {% endif %}
+
+  </main>
+</div>
+
+<script>
+const $s=document.getElementById('appSearch'),
+      $f=document.getElementById('statusFilter');
+function filterApps(){
+  const q=$s.value.toLowerCase(), st=$f.value; let n=0;
+  document.querySelectorAll('.app-row').forEach(r=>{
+    const ok=(!q||(r.dataset.text||'').includes(q))&&(st==='all'||r.dataset.status===st);
+    r.style.display=ok?'':'none'; if(ok)n++;
+  });
+  document.getElementById('appCount').textContent=n;
+}
+$s.addEventListener('input',filterApps);
+$f.addEventListener('change',filterApps);
+document.getElementById('resetApp').addEventListener('click',()=>{ $s.value='';$f.value='all';filterApps(); });
+</script>
 </body>
 </html>

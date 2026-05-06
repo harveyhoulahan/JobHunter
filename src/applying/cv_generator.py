@@ -17,25 +17,36 @@ from loguru import logger
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from profile import HARVEY_PROFILE
-
-# Try to import PDF libraries
 try:
-    from pypdf import PdfReader
+    from profile import HARVEY_PROFILE  # type: ignore[import]
+except ImportError:
+    HARVEY_PROFILE = {}  # type: ignore[assignment]
+
+# Pre-declare optional imports so names are always bound (Pylance)
+PdfReader = None  # type: ignore[assignment]
+letter = SimpleDocTemplate = getSampleStyleSheet = ParagraphStyle = None  # type: ignore[assignment]
+inch = Paragraph = Spacer = ListFlowable = ListItem = None  # type: ignore[assignment]
+TA_LEFT: int = 0
+TA_CENTER: int = 1
+PDF_AVAILABLE = False
+REPORTLAB_AVAILABLE = False
+
+try:
+    from pypdf import PdfReader  # type: ignore[assignment]
     PDF_AVAILABLE = True
 except ImportError:
-    PDF_AVAILABLE = False
     logger.warning("pypdf not available - install with: pip install pypdf")
 
 try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    from reportlab.lib.pagesizes import letter  # type: ignore[assignment]
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore[assignment]
+    from reportlab.lib.units import inch  # type: ignore[assignment]
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem  # type: ignore[assignment]
+    from reportlab.lib.enums import TA_LEFT as _TA_LEFT, TA_CENTER as _TA_CENTER  # type: ignore[assignment]
+    TA_LEFT = int(_TA_LEFT)
+    TA_CENTER = int(_TA_CENTER)
     REPORTLAB_AVAILABLE = True
 except ImportError:
-    REPORTLAB_AVAILABLE = False
     logger.warning("reportlab not available - install with: pip install reportlab")
 
 
@@ -45,7 +56,7 @@ class CVGenerator:
     """
     
     # Resume file names to look for in root folder
-    RESUME_FILES = ['NY RESUME.pdf', 'RESUME1.pdf', 'resume.pdf', 'Resume.pdf']
+    RESUME_FILES = ['HJH CV.pdf', 'NY RESUME.pdf', 'RESUME1.pdf', 'resume.pdf', 'Resume.pdf']
     
     def __init__(self, resume_path: Optional[str] = None):
         """
@@ -155,10 +166,12 @@ class CVGenerator:
         company = job_data.get('company', 'Unknown Company')
         description = job_data.get('description', '')
         
-        # Get matched elements from scoring
-        tech_matches = score_result.get('matches', {}).get('tech', [])
-        industry_matches = score_result.get('matches', {}).get('industry', [])
-        role_matches = score_result.get('matches', {}).get('role', [])
+        # Get matched elements from scoring — support both nested 'matches' dict
+        # and flat keys (as passed from main.py's auto-apply score_results)
+        _matches = score_result.get('matches') or {}
+        tech_matches = list(_matches.get('tech') or score_result.get('tech_matches') or [])
+        industry_matches = list(_matches.get('industry') or score_result.get('industry_matches') or [])
+        role_matches = list(_matches.get('role') or score_result.get('role_matches') or [])
         
         logger.info(f"Generating customized CV for: {job_title} at {company}")
         logger.info(f"Tech matches to highlight: {tech_matches[:5]}")
@@ -446,10 +459,13 @@ class CVGenerator:
         ])
         
         # Add education from profile
-        for edu in HARVEY_PROFILE.get('education', [])[:1]:
+        edu_raw = HARVEY_PROFILE.get('education', {})
+        # profile stores education as a single dict; normalise to list
+        edu_list = [edu_raw] if isinstance(edu_raw, dict) and edu_raw else (edu_raw if isinstance(edu_raw, list) else [])
+        for edu in edu_list[:1]:
             cv_parts.extend([
                 f"{edu.get('degree', 'B.S. in Computer Science')}",
-                f"{edu.get('institution', 'Monash University')} | {edu.get('graduation', '2025')}",
+                f"{edu.get('university') or edu.get('institution', 'Monash University')} | {edu.get('graduation', '2025')}",
                 f"GPA: {edu.get('gpa', '3.6/4.0')}"
             ])
         
@@ -473,6 +489,9 @@ class CVGenerator:
         if not REPORTLAB_AVAILABLE:
             logger.warning("reportlab not available, cannot generate PDF")
             return ""
+        # All reportlab names are guaranteed bound when REPORTLAB_AVAILABLE is True
+        # Pylance can't infer this from the try/except pattern; ignore below.
+        # type: ignore comments on individual calls omitted — runtime is safe.
         
         try:
             # Ensure output directory exists
@@ -493,7 +512,7 @@ class CVGenerator:
                 'Title',
                 parent=styles['Heading1'],
                 fontSize=16,
-                alignment=TA_CENTER,
+                alignment=TA_CENTER,  # type: ignore[arg-type]
                 spaceAfter=12
             )
             heading_style = ParagraphStyle(

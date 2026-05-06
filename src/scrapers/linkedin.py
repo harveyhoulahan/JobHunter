@@ -9,6 +9,9 @@ from .base import BaseScraper, JobListing
 import urllib.parse
 import time
 import random
+import re
+import os
+import json
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -78,13 +81,39 @@ class LinkedInScraper(BaseScraper):
             'Full Stack Engineer Python'
         ]
         
+        work_types = self._load_work_type_preferences()
+
+        # Determine if this run is a remote/freelance pass or a city-local pass
+        remote_mode = self._is_remote_location(location)
+        if remote_mode and not work_types.get('remote', True):
+            logger.info(f"Skipping remote-mode LinkedIn pass for '{location}' because remote work type is disabled")
+            return []
+        
         # Use provided terms or Harvey's targeted terms
         terms_to_search = search_terms if search_terms else harvey_targeted_terms
+        terms_to_search = self._filter_terms_for_location(
+            terms_to_search,
+            location,
+            include_remote_terms=remote_mode
+        )
+        terms_to_search = self._prioritize_terms_for_location(
+            terms_to_search,
+            location=location,
+            remote_mode=remote_mode
+        )
+        terms_to_search = self._normalize_terms_for_query(
+            terms_to_search,
+            location=location,
+            remote_mode=remote_mode
+        )
         
         # Increased from 5 to 7 searches for more job volume
-        for term in terms_to_search[:7]:
+        MAX_TERMS = int(os.getenv("LINKEDIN_TERMS_PER_LOCATION", "10"))
+        for term in terms_to_search[:MAX_TERMS]:
             try:
-                jobs = self._search_single_term(term, location)
+                jobs = self._search_single_term(term, location, remote_mode=remote_mode)
+                if not remote_mode:
+                    jobs = self._filter_remote_jobs_for_city_run(jobs)
                 all_jobs.extend(jobs)
                 logger.info(f"✓ Found {len(jobs)} jobs for '{term}' on LinkedIn")
                 
@@ -107,12 +136,316 @@ class LinkedInScraper(BaseScraper):
         logger.info(f"LinkedIn total: {len(unique_jobs)} unique jobs after deduplication")
         return unique_jobs
     
-    def _search_single_term(self, term: str, location: str) -> List[Dict[str, Any]]:
+    def _filter_remote_jobs_for_city_run(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        In city mode, remove jobs whose location text clearly indicates remote.
+        This is a safety net in case LinkedIn still returns remote postings.
+        """
+        remote_markers = ["remote", "work from home", "wfh", "anywhere", "distributed"]
+        filtered: List[Dict[str, Any]] = []
+        removed = 0
+        for job in jobs:
+            location_text = (job.get("location") or "").lower()
+            if any(marker in location_text for marker in remote_markers):
+                removed += 1
+                continue
+            filtered.append(job)
+        if removed:
+            logger.info(f"Filtered out {removed} remote-tagged jobs in city mode")
+        return filtered
+
+    def _is_remote_location(self, location: str) -> bool:
+        """Detect whether location should run in remote/freelance mode."""
+        location_lower = (location or "").lower()
+        remote_location_tokens = ["remote", "freelance", "contract", "anywhere", "work from home", "wfh"]
+        return any(tok in location_lower for tok in remote_location_tokens)
+
+    def _load_work_type_preferences(self) -> Dict[str, bool]:
+        """Load work type preferences from config/search_preferences.json."""
+        defaults = {'remote': True, 'onsite': True, 'hybrid': True}
+        try:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            config_path = os.path.join(repo_root, 'config', 'search_preferences.json')
+            if not os.path.exists(config_path):
+                return defaults
+            with open(config_path, 'r') as f:
+                data = json.load(f)
+            work_types = data.get('work_types', {})
+            normalized = {
+                'remote': bool(work_types.get('remote', True)),
+                'onsite': bool(work_types.get('onsite', True)),
+                'hybrid': bool(work_types.get('hybrid', True)),
+            }
+            if not any(normalized.values()):
+                return defaults
+            return normalized
+        except Exception as e:
+            logger.warning(f"Could not load work type preferences: {e}")
+            return defaults
+
+    def _location_aliases(self, location: str) -> List[str]:
+        """
+        Build normalized aliases for matching location-specific keyword terms.
+        """
+        location_lower = (location or "").strip().lower()
+        if not location_lower:
+            return []
+
+        aliases = [location_lower]
+        parts = [p for p in location_lower.replace(",", " ").split() if p]
+        if not parts:
+            return aliases
+
+        # Remove trailing state code token if present: "sydney nsw" -> "sydney"
+        if len(parts) >= 2 and len(parts[-1]) <= 3:
+            aliases.append(" ".join(parts[:-1]))
+
+        # Single-token and two-token city aliases
+        aliases.append(parts[0])
+        if len(parts) >= 2:
+            aliases.append(" ".join(parts[:2]))
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped: List[str] = []
+        for alias in aliases:
+            if alias and alias not in seen:
+                seen.add(alias)
+                deduped.append(alias)
+        return deduped
+
+    def _display_city_name(self, location: str) -> str:
+        """Return a friendly city phrase for constructing fallback terms."""
+        aliases = self._location_aliases(location)
+        if not aliases:
+            return location.strip()
+        # Prefer alias without commas/state code
+        return aliases[1] if len(aliases) > 1 else aliases[0]
+
+    def _filter_terms_for_location(
+        self,
+        search_terms: List[str],
+        location: str,
+        include_remote_terms: bool
+    ) -> List[str]:
+        """
+        Keep only terms relevant to this location.
+        - City mode: exclude remote/freelance keyword terms.
+        - Remote mode: include remote/freelance keyword terms.
+        """
+        if not search_terms:
+            return search_terms
+
+        location_lower = (location or "").lower()
+        location_aliases = self._location_aliases(location)
+
+        # Broad city/region tokens used in keyword list.
+        known_location_tokens = {
+            "sydney", "melbourne", "brisbane", "canberra", "gold coast",
+            "new york", "nyc", "london", "amsterdam", "berlin", "dublin",
+            "lisbon", "stockholm", "copenhagen", "zurich",
+            "dubai", "abu dhabi", "tel aviv", "mexico city", "medellin",
+            "buenos aires", "colombia", "latin america", "latam", "south america",
+            "middle east", "mena",
+            "europe", "united states", "usa", "san francisco", "seattle"
+        }
+        remote_tokens = {"remote", "freelance", "contract", "digital nomad", "async"}
+
+        filtered: List[str] = []
+        for term in search_terms:
+            term_lower = term.lower()
+            is_remote_term = any(tok in term_lower for tok in remote_tokens)
+
+            # Handle remote/freelance keyword terms first so they never
+            # get treated as generic terms in city mode.
+            if is_remote_term:
+                if include_remote_terms:
+                    filtered.append(term)
+                continue
+
+            matching_token = next((tok for tok in known_location_tokens if tok in term_lower), None)
+
+            if not matching_token:
+                # Generic role term - valid for every city iteration
+                filtered.append(term)
+                continue
+
+            if location_aliases and any(alias in term_lower for alias in location_aliases):
+                filtered.append(term)
+                continue
+
+            # Keep continent-wide terms when location is within that region.
+            if matching_token == "europe" and any(
+                eu_kw in location_lower for eu_kw in ["uk", "london", "berlin", "amsterdam", "dublin", "lisbon", "stockholm", "copenhagen", "zurich"]
+            ):
+                filtered.append(term)
+                continue
+
+            if matching_token in {"latin america", "latam", "south america"} and any(
+                la_kw in location_lower for la_kw in ["mexico", "colombia", "argentina", "brazil", "chile", "peru"]
+            ):
+                filtered.append(term)
+                continue
+
+            if matching_token in {"united states", "usa"} and any(
+                us_kw in location_lower for us_kw in ["new york", "san francisco", "seattle", "austin", "boston", "los angeles", "us", "usa"]
+            ):
+                filtered.append(term)
+                continue
+
+        # Fall back to first generic chunk if location filtering got too strict.
+        if not filtered:
+            filtered = search_terms[:7]
+
+        logger.info(
+            f"LinkedIn term filter for '{location}' (remote_mode={include_remote_terms}): "
+            f"{len(filtered)} selected from {len(search_terms)}"
+        )
+        return filtered
+
+    def _prioritize_terms_for_location(
+        self,
+        terms: List[str],
+        location: str,
+        remote_mode: bool
+    ) -> List[str]:
+        """
+        Reorder terms to prioritize software-engineer searches in city mode.
+        """
+        if not terms:
+            return terms
+
+        terms_working = list(terms)
+        location_aliases = self._location_aliases(location)
+        location_aliases_set = set(location_aliases)
+
+        if not remote_mode:
+            # Ensure we always run a city-specific "Software Engineer <city>" query.
+            city_name = self._display_city_name(location)
+            city_software_term = f"Software Engineer {city_name.title()}"
+            if not any(city_software_term.lower() == t.lower() for t in terms_working):
+                terms_working.insert(0, city_software_term)
+
+        software_priority_tokens = (
+            "software engineer",
+            "backend engineer",
+            "python engineer",
+            "python software engineer",
+            "software developer",
+            "backend developer",
+            "full stack engineer",
+            "fullstack engineer",
+            "api engineer",
+        )
+
+        def is_location_specific(term_lower: str) -> bool:
+            return any(alias and alias in term_lower for alias in location_aliases_set)
+
+        def is_software_priority(term_lower: str) -> bool:
+            return any(token in term_lower for token in software_priority_tokens)
+
+        # Stable sort by priority:
+        #  1) city-specific software terms
+        #  2) software terms
+        #  3) city-specific non-software terms
+        #  4) everything else
+        def sort_key(term: str):
+            tl = term.lower()
+            loc = is_location_specific(tl)
+            sw = is_software_priority(tl)
+            return (
+                0 if (loc and sw) else
+                1 if sw else
+                2 if loc else
+                3
+            )
+
+        ordered = sorted(terms_working, key=sort_key)
+        logger.info(
+            f"LinkedIn term priority for '{location}': "
+            f"{ordered[:5]}{' ...' if len(ordered) > 5 else ''}"
+        )
+        return ordered
+
+    def _normalize_terms_for_query(self, terms: List[str], location: str, remote_mode: bool) -> List[str]:
+        """
+        Normalize search terms so keywords describe role only.
+        Location is already passed via the LinkedIn `location` query param.
+        """
+        if not terms:
+            return terms
+
+        location_aliases = self._location_aliases(location)
+        removable_location_tokens = {
+            "sydney", "melbourne", "brisbane", "canberra", "gold coast",
+            "new york", "nyc", "london", "amsterdam", "berlin", "dublin",
+            "lisbon", "stockholm", "copenhagen", "zurich",
+            "dubai", "abu dhabi", "tel aviv", "mexico city", "medellin",
+            "buenos aires", "colombia", "latin america", "latam", "south america",
+            "middle east", "mena", "europe", "united states", "usa",
+            "san francisco", "seattle"
+        }
+        removable_location_tokens.update(location_aliases)
+
+        # In remote mode, location context comes from f_WT=2, so strip remote adjectives too.
+        removable_remote_tokens = {"remote", "freelance", "contract", "digital nomad", "async"}
+        removable_tokens = set(removable_location_tokens)
+        if remote_mode:
+            removable_tokens.update(removable_remote_tokens)
+
+        normalized: List[str] = []
+        seen = set()
+
+        # Sort longest-first so multi-word tokens are removed before single words.
+        for term in terms:
+            cleaned = term
+            for token in sorted(removable_tokens, key=len, reverse=True):
+                pattern = r"\b" + re.escape(token) + r"\b"
+                cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(cleaned)
+
+        logger.info(
+            f"LinkedIn normalized terms for '{location}' (remote_mode={remote_mode}): "
+            f"{normalized[:5]}{' ...' if len(normalized) > 5 else ''}"
+        )
+        return normalized
+    
+    def _search_single_term(self, term: str, location: str, remote_mode: bool = False) -> List[Dict[str, Any]]:
         """Search for a single term with enhanced filtering and pagination"""
         all_jobs = []
+        seen_urls: set = set()  # dedup within this term's pages
+        work_types = self._load_work_type_preferences()
+
+        work_type_codes: List[str] = []
+        if remote_mode:
+            if work_types.get('remote', True):
+                work_type_codes = ['2']
+        else:
+            if work_types.get('onsite', True):
+                work_type_codes.append('1')
+            if work_types.get('hybrid', True):
+                work_type_codes.append('3')
+            if work_types.get('remote', True):
+                work_type_codes.append('2')
+
+        if not work_type_codes:
+            logger.info(f"No enabled LinkedIn work types for '{location}', skipping term '{term}'")
+            return []
         
-        # Fetch 3 pages to get ~24 jobs per term (instead of just 8)
-        for page_num in range(3):
+        # Fetch up to MAX_PAGES pages per term; early-stop kicks in if LinkedIn
+        # starts serving duplicate cards (seen_urls dedup) or returns no cards at all.
+        # Default 6 pages (150 jobs/term) — LinkedIn reliably serves this without SSL drops.
+        # Raise LINKEDIN_PAGES_PER_TERM to 10 at your own risk (triggers rate-limiting ~p9).
+        MAX_PAGES = int(os.getenv("LINKEDIN_PAGES_PER_TERM", "6"))
+        for page_num in range(MAX_PAGES):
             start_index = page_num * 25  # LinkedIn uses 25 jobs per page
             
             # LinkedIn public job search URL with filters
@@ -120,7 +453,7 @@ class LinkedInScraper(BaseScraper):
                 'keywords': term,
                 'location': location,
                 'f_TPR': 'r604800',  # Posted in last 7 days
-                'f_WT': '2,1',  # Remote & Hybrid
+                'f_WT': ','.join(work_type_codes),
                 'sortBy': 'DD',  # Sort by date (most recent)
                 'f_E': '2,3',  # Entry level & Associate (Junior to Mid)
                 'start': start_index  # Pagination
@@ -154,19 +487,25 @@ class LinkedInScraper(BaseScraper):
                     try:
                         job = self._parse_job_card(card)
                         if job:
+                            job_url = job.to_dict().get('url', '')
+                            if job_url and job_url in seen_urls:
+                                continue  # duplicate — LinkedIn served same card again
+                            seen_urls.add(job_url)
                             jobs_on_page.append(job.to_dict())
                     except Exception as e:
                         logger.debug(f"Error parsing job card: {e}")
                 
                 if not jobs_on_page:
+                    logger.info(f"Page {page_num + 1}: No new unique jobs — stopping pagination for '{term}'")
                     break  # No valid jobs found, stop pagination
                 
                 all_jobs.extend(jobs_on_page)
-                logger.info(f"Page {page_num + 1}: Parsed {len(jobs_on_page)} valid jobs for '{term}'")
+                logger.info(f"Page {page_num + 1}: Parsed {len(jobs_on_page)} unique jobs for '{term}' (total so far: {len(all_jobs)})")
                 
-                # Small delay between pages
-                if page_num < 2:
-                    time.sleep(random.uniform(1.5, 2.5))
+                # Polite delay between every page (skip only after the last one)
+                # 3–5 s is enough to avoid SSL EOF / rate-limit drops at 6 pages/term
+                if page_num < MAX_PAGES - 1:
+                    time.sleep(random.uniform(3.0, 5.0))
                     
             except Exception as e:
                 logger.error(f"Error fetching LinkedIn page {page_num + 1} for '{term}': {e}")

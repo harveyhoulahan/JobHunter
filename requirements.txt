@@ -28,8 +28,10 @@ pydantic>=2.5.0
 
 # Web scraping utilities
 selenium>=4.15.0
+langdetect>=1.0.9
 playwright>=1.40.0
 webdriver-manager>=4.0.0
+undetected-chromedriver>=3.5.0
 
 # Data processing
 pandas>=2.1.0

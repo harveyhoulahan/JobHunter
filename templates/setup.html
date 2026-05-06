@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter — Setup</title>
+  <link rel="stylesheet" href="/static/style.css?v=3.0">
+  <style>
+    body { max-width: 780px; margin: 0 auto; padding: 40px 20px; }
+    .setup-header { text-align: center; margin-bottom: 40px; }
+    .setup-header h1 { font-size: 28px; margin-bottom: 8px; }
+    .setup-header p  { color: var(--text-3); font-size: 13px; }
+
+    .step {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+    .step-num {
+      display: inline-block;
+      width: 24px; height: 24px; line-height: 24px;
+      border-radius: 50%; background: var(--accent);
+      color: #000; font-weight: 700; font-size: 12px;
+      text-align: center; margin-right: 10px; vertical-align: middle;
+    }
+    .step h2 { display: inline; font-size: 15px; vertical-align: middle; }
+    .step p  { color: var(--text-3); font-size: 12px; margin: 8px 0 16px; }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(0,200,150,.05); }
+    .upload-zone input[type=file] { display: none; }
+    .upload-zone .uz-icon { font-size: 32px; margin-bottom: 8px; }
+    .upload-zone .uz-label { font-size: 13px; color: var(--text-2); }
+    .upload-zone .uz-hint  { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+    #file-name { margin-top: 10px; font-size: 12px; color: var(--accent); min-height: 18px; }
+
+    /* Progress / status */
+    #ingest-status { margin-top: 14px; font-size: 12px; color: var(--text-3); min-height: 20px; }
+    #ingest-status.ok    { color: #4ade80; }
+    #ingest-status.error { color: #f87171; }
+
+    /* Profile editor */
+    #profile-editor { display: none; }
+    .field-group { margin-bottom: 16px; }
+    .field-group label { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .05em; }
+    .field-group input,
+    .field-group textarea {
+      width: 100%; box-sizing: border-box;
+      background: rgba(255,255,255,.06);
+      border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text-1); padding: 8px 10px; font-size: 12px;
+      font-family: var(--sans);
+    }
+    .field-group textarea { resize: vertical; min-height: 80px; }
+    .field-group input:focus, .field-group textarea:focus { outline: none; border-color: var(--accent); }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .tag-hint { font-size: 10px; color: var(--text-3); margin-top: 3px; }
+
+    .save-row { display: flex; gap: 10px; margin-top: 20px; align-items: center; }
+    #save-status { font-size: 12px; color: var(--text-3); }
+    #save-status.ok    { color: #4ade80; }
+    #save-status.error { color: #f87171; }
+
+    .dashboard-link { text-align: center; margin-top: 30px; }
+    .dashboard-link a { color: var(--accent); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<div class="setup-header">
+  <h1>JobHunter Setup</h1>
+  <p>Upload your CV once and the system will personalise everything — scoring, cover letters, and CV generation — to your background.</p>
+</div>
+
+<!-- Step 1: Upload CV -->
+<div class="step">
+  <span class="step-num">1</span><h2>Upload your CV / résumé</h2>
+  <p>PDF format. Kimi will extract your skills, experience, education and goals automatically.</p>
+
+  <div class="upload-zone" id="upload-zone">
+    <input type="file" id="cv-file" accept=".pdf">
+    <div class="uz-label">Click to choose a PDF, or drag it here</div>
+    <div class="uz-hint">Max 10 MB</div>
+  </div>
+  <div id="file-name"></div>
+  <div style="margin-top:14px">
+    <button class="btn btn-green" id="ingest-btn" disabled>Extract profile from CV</button>
+  </div>
+  <div id="ingest-status"></div>
+</div>
+
+<!-- Step 2: Review & edit -->
+<div class="step" id="profile-editor">
+  <span class="step-num">2</span><h2>Review &amp; edit your profile</h2>
+  <p>Kimi's extraction is a starting point — fix anything that's wrong before saving.</p>
+
+  <div class="two-col">
+    <div class="field-group">
+      <label>Full name</label>
+      <input type="text" id="f-name" placeholder="Jane Smith">
+    </div>
+    <div class="field-group">
+      <label>Email</label>
+      <input type="email" id="f-email" placeholder="jane@example.com">
+    </div>
+    <div class="field-group">
+      <label>Phone</label>
+      <input type="text" id="f-phone" placeholder="+1 555 000 0000">
+    </div>
+    <div class="field-group">
+      <label>Location (city, country)</label>
+      <input type="text" id="f-location" placeholder="New York, NY, USA">
+    </div>
+    <div class="field-group">
+      <label>LinkedIn URL</label>
+      <input type="text" id="f-linkedin" placeholder="https://linkedin.com/in/…">
+    </div>
+    <div class="field-group">
+      <label>Portfolio / Website</label>
+      <input type="text" id="f-portfolio" placeholder="https://mysite.com">
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label>Professional summary (2-3 sentences)</label>
+    <textarea id="f-summary" rows="3" placeholder="Your background and what makes you stand out…"></textarea>
+  </div>
+
+  <div class="field-group">
+    <label>Core skills <span class="tag-hint">(comma-separated)</span></label>
+    <textarea id="f-skills-core" rows="2" placeholder="Python, React, PostgreSQL, Docker, Machine Learning…"></textarea>
+  </div>
+  <div class="field-group">
+    <label>Strong / secondary skills <span class="tag-hint">(comma-separated)</span></label>
+    <textarea id="f-skills-strong" rows="2" placeholder="AWS, TypeScript, FastAPI, Pandas…"></textarea>
+  </div>
+
+  <div class="field-group">
+    <label>Target job titles <span class="tag-hint">(comma-separated)</span></label>
+    <textarea id="f-roles" rows="2" placeholder="Software Engineer, Backend Engineer, ML Engineer…"></textarea>
+  </div>
+
+  <div class="field-group">
+    <label>Industries of interest <span class="tag-hint">(comma-separated)</span></label>
+    <textarea id="f-industries" rows="2" placeholder="Climate Tech, FinTech, SaaS, Health Tech…"></textarea>
+  </div>
+
+  <div class="field-group">
+    <label>Work experience <span class="tag-hint">(JSON array — you can leave as extracted)</span></label>
+    <textarea id="f-experience" rows="8" placeholder='[{"title":"...","company":"...","period":"...","bullets":["..."]}]'></textarea>
+  </div>
+
+  <div class="field-group">
+    <label>Minimum acceptable salary (annual, USD)</label>
+    <input type="number" id="f-min-salary" placeholder="80000">
+  </div>
+
+  <div class="field-group">
+    <label>Visa / work eligibility notes</label>
+    <input type="text" id="f-visa" placeholder="Citizen, PR, requires sponsorship, E-3 eligible…">
+  </div>
+
+  <div class="save-row">
+    <button class="btn btn-green" id="save-btn">Save profile &amp; activate</button>
+    <span id="save-status"></span>
+  </div>
+</div>
+
+<div class="dashboard-link">
+  <a href="/">← Back to dashboard</a>
+</div>
+
+<script>
+(function(){
+  var zone    = document.getElementById('upload-zone');
+  var fileIn  = document.getElementById('cv-file');
+  var fileNameEl = document.getElementById('file-name');
+  var ingestBtn  = document.getElementById('ingest-btn');
+  var ingestSt   = document.getElementById('ingest-status');
+  var editor     = document.getElementById('profile-editor');
+  var saveBtn    = document.getElementById('save-btn');
+  var saveSt     = document.getElementById('save-status');
+
+  // ── Drag-and-drop ─────────────────────────────────────────
+  zone.addEventListener('click', function(){ fileIn.click(); });
+  zone.addEventListener('dragover', function(e){ e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', function(){ zone.classList.remove('drag'); });
+  zone.addEventListener('drop', function(e){
+    e.preventDefault(); zone.classList.remove('drag');
+    var f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+  fileIn.addEventListener('change', function(){
+    if (fileIn.files[0]) setFile(fileIn.files[0]);
+  });
+
+  function setFile(f){
+    fileIn._file = f;
+    fileNameEl.textContent = '📎 ' + f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)';
+    ingestBtn.disabled = false;
+    ingestSt.className = '';
+    ingestSt.textContent = '';
+  }
+
+  // ── Ingest ────────────────────────────────────────────────
+  ingestBtn.addEventListener('click', function(){
+    var f = fileIn._file;
+    if (!f) return;
+
+    ingestBtn.disabled = true;
+    ingestSt.className = '';
+    ingestSt.textContent = '⏳ Sending to Kimi for extraction… (15-30 s)';
+
+    var fd = new FormData();
+    fd.append('cv', f);
+
+    fetch('/api/setup/ingest_cv', { method: 'POST', body: fd })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.success) {
+          ingestSt.className = 'ok';
+          ingestSt.textContent = 'Extraction complete — review below';
+          fillEditor(d.profile);
+          editor.style.display = 'block';
+          editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          ingestSt.className = 'error';
+          ingestSt.textContent = 'Error: ' + (d.error || 'extraction failed');
+          ingestBtn.disabled = false;
+        }
+      })
+      .catch(function(err){
+        ingestSt.className = 'error';
+        ingestSt.textContent = 'Request failed: ' + err;
+        ingestBtn.disabled = false;
+      });
+  });
+
+  // ── Fill editor fields ────────────────────────────────────
+  function fillEditor(p){
+    set('f-name',      p.name || '');
+    set('f-email',     p.email || '');
+    set('f-phone',     p.phone || '');
+    set('f-linkedin',  p.linkedin || '');
+    set('f-portfolio', p.portfolio || '');
+    set('f-summary',   p.summary || '');
+    set('f-visa',      p.visa_notes || '');
+    set('f-min-salary', p.min_salary || '');
+
+    // Location: could be string or dict
+    var loc = p.location || '';
+    if (typeof loc === 'object') loc = (loc.base || '') + (loc.country ? ', ' + loc.country : '');
+    set('f-location', loc);
+
+    // Skills
+    var skills = p.skills || {};
+    set('f-skills-core',   (skills.core   || []).join(', '));
+    set('f-skills-strong', (skills.strong || []).join(', '));
+
+    // Roles / industries
+    set('f-roles',      (p.roles      || []).join(', '));
+    set('f-industries', (p.industries || []).join(', '));
+
+    // Experience as pretty JSON
+    try {
+      set('f-experience', JSON.stringify(p.experience || [], null, 2));
+    } catch(e) { set('f-experience', '[]'); }
+  }
+
+  function set(id, val){
+    var el = document.getElementById(id);
+    if (el) el.value = val;
+  }
+
+  // ── Save ──────────────────────────────────────────────────
+  saveBtn.addEventListener('click', function(){
+    saveSt.className = '';
+    saveSt.textContent = 'Saving…';
+
+    // Build profile object from fields
+    var loc = document.getElementById('f-location').value.trim();
+    var exp = [];
+    try { exp = JSON.parse(document.getElementById('f-experience').value || '[]'); } catch(e){}
+
+    var profile = {
+      name:       document.getElementById('f-name').value.trim(),
+      email:      document.getElementById('f-email').value.trim(),
+      phone:      document.getElementById('f-phone').value.trim(),
+      linkedin:   document.getElementById('f-linkedin').value.trim(),
+      portfolio:  document.getElementById('f-portfolio').value.trim(),
+      summary:    document.getElementById('f-summary').value.trim(),
+      visa_notes: document.getElementById('f-visa').value.trim(),
+      min_salary: parseInt(document.getElementById('f-min-salary').value) || 0,
+      location:   loc,
+      skills: {
+        core:   csv(document.getElementById('f-skills-core').value),
+        strong: csv(document.getElementById('f-skills-strong').value),
+        familiar: []
+      },
+      roles:      csv(document.getElementById('f-roles').value),
+      industries: csv(document.getElementById('f-industries').value),
+      experience: exp,
+      // Preserve scoring thresholds at sensible defaults
+      alert_thresholds: { immediate: 78, digest: 62, store_only: 40 },
+    };
+
+    fetch('/api/setup/save_profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile)
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.success) {
+        saveSt.className = 'ok';
+        saveSt.textContent = 'Profile saved — redirecting to dashboard…';
+        setTimeout(function(){ window.location.href = '/'; }, 1500);
+      } else {
+        saveSt.className = 'error';
+        saveSt.textContent = 'Error: ' + (d.error || 'save failed');
+      }
+    })
+    .catch(function(err){
+      saveSt.className = 'error';
+      saveSt.textContent = 'Request failed: ' + err;
+    });
+  });
+
+  function csv(str){ return str.split(',').map(function(s){ return s.trim(); }).filter(Boolean); }
+})();
+</script>
+</body>
+</html>

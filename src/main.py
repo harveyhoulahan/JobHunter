@@ -4,7 +4,7 @@ Main orchestration - brings everything together
 import os
 import sys
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from loguru import logger
 from dotenv import load_dotenv
 
@@ -14,22 +14,48 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+# ── Language detection (graceful fallback if not installed) ───────────────────
+try:
+    from langdetect import detect as _detect_lang
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+    logger.warning("langdetect not installed — language filter disabled. pip install langdetect")
+
+
+def _is_english(text: str) -> bool:
+    """Return True if text appears to be English. Fail-open on any error."""
+    if not _LANGDETECT_AVAILABLE or not text or len(text.strip()) < 20:
+        return True
+    try:
+        return _detect_lang(text[:300]) == 'en'
+    except Exception:
+        return True  # fail open — don't drop a job due to detection error
+
+
 from src.database.models import Database
 from src.profile import HARVEY_PROFILE
 from src.scoring.engine import JobScorer
 from src.scrapers.linkedin import LinkedInScraper
 from src.scrapers.builtin import BuiltInNYCScraper
-from src.scrapers.yc_jobs import YCJobsScraper
 from src.scrapers.seek import SeekScraper
+from src.scrapers.eurotoptech import EuroTopTechScraper
+from src.scrapers.berlinstartupjobs import BerlinStartupJobsScraper
+from src.scrapers.relocateme import RelocateMeScraper
+from src.scrapers.getonboard import GetOnBrdScraper
+from src.scrapers.zerotaxjobs import ZeroTaxJobsScraper
+from src.scrapers.bayt import BaytScraper
+from src.scrapers.remoteok import RemoteOKScraper
+from src.scrapers.weworkremotely import WeWorkRemotelyScraper
 from src.alerts.notifications import AlertManager
 from src.applying.applicator import JobApplicator
-from src.config_loader import load_scraping_locations, get_active_countries, should_activate_job_board
+from src.config_loader import load_scraping_locations, get_active_countries, should_activate_job_board, get_active_regions
 
 
 class JobHunter:
     """Main application orchestrator"""
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         # Load environment variables
         load_dotenv()
         
@@ -41,17 +67,77 @@ class JobHunter:
         self.alert_manager = AlertManager(db=self.db)
         self.applicator = JobApplicator()  # Auto-apply for high-scoring jobs
         
-        # Initialize scrapers - LinkedIn, BuiltInNYC, YC Jobs, and Seek (AU)
-        self.scrapers = {
-            'linkedin': LinkedInScraper(),       # ~432 jobs per run
-            'builtin': BuiltInNYCScraper(),      # ~150 jobs per run
-            'yc_jobs': YCJobsScraper(),          # ~100-200 startup jobs
-        }
+        # Initialize scrapers based on active countries
+        self.scrapers = {}
         
-        # Add Seek scraper if Australian locations are active
-        if should_activate_job_board('seek'):
-            self.scrapers['seek'] = SeekScraper()  # Australian jobs
-            logger.info("Seek scraper activated for Australian locations")
+        # LinkedIn - works globally
+        if should_activate_job_board('linkedin'):
+            self.scrapers['linkedin'] = LinkedInScraper()
+            logger.info("LinkedIn scraper activated")
+        
+        # BuiltIn - US only
+        if should_activate_job_board('builtin'):
+            self.scrapers['builtin'] = BuiltInNYCScraper()
+            logger.info("BuiltIn scraper activated for US locations")
+
+        # Seek - Australia & NZ (DISABLED: Cloudflare blocking all requests)
+        # if should_activate_job_board('seek'):
+        #     self.scrapers['seek'] = SeekScraper()
+        #     logger.info("Seek scraper activated for Australian locations")
+
+        # --- New regional scrapers ---
+        active_regions = get_active_regions()
+
+        # Europe scrapers
+        if 'Europe' in active_regions:
+            try:
+                self.scrapers['eurotoptech'] = EuroTopTechScraper()
+                logger.info("EuroTopTech scraper activated")
+            except Exception as exc:
+                logger.warning(f"EuroTopTech scraper failed to init: {exc}")
+            try:
+                self.scrapers['berlinstartupjobs'] = BerlinStartupJobsScraper()
+                logger.info("BerlinStartupJobs scraper activated")
+            except Exception as exc:
+                logger.warning(f"BerlinStartupJobs scraper failed to init: {exc}")
+            try:
+                self.scrapers['relocateme'] = RelocateMeScraper()
+                logger.info("RelocateMe scraper activated")
+            except Exception as exc:
+                logger.warning(f"RelocateMe scraper failed to init: {exc}")
+
+        # Latin America scrapers
+        if 'Latin America' in active_regions:
+            try:
+                self.scrapers['getonboard'] = GetOnBrdScraper()
+                logger.info("GetOnBrd scraper activated")
+            except Exception as exc:
+                logger.warning(f"GetOnBrd scraper failed to init: {exc}")
+
+        # Middle East scrapers
+        if 'Middle East' in active_regions:
+            try:
+                self.scrapers['zerotaxjobs'] = ZeroTaxJobsScraper()
+                logger.info("ZeroTaxJobs scraper activated")
+            except Exception as exc:
+                logger.warning(f"ZeroTaxJobs scraper failed to init: {exc}")
+            try:
+                self.scrapers['bayt'] = BaytScraper()
+                logger.info("Bayt scraper activated")
+            except Exception as exc:
+                logger.warning(f"Bayt scraper failed to init: {exc}")
+
+        # Global remote scrapers — always active
+        try:
+            self.scrapers['remoteok'] = RemoteOKScraper()
+            logger.info("RemoteOK scraper activated")
+        except Exception as exc:
+            logger.warning(f"RemoteOK scraper failed to init: {exc}")
+        try:
+            self.scrapers['weworkremotely'] = WeWorkRemotelyScraper()
+            logger.info("WeWorkRemotely scraper activated")
+        except Exception as exc:
+            logger.warning(f"WeWorkRemotely scraper failed to init: {exc}")
         
         # Configuration
         self.config = config or self._default_config()
@@ -70,8 +156,9 @@ class JobHunter:
         """Default configuration optimized for Harvey's profile"""
         return {
             'thresholds': {
-                'immediate': 70,  # High match - send email immediately
-                'digest': 50      # Medium match - include in daily digest
+                'immediate': 78,   # Top matches — email immediately (~top 2-3%)
+                'digest': 62,      # Solid matches — daily digest (~top 10%)
+                'store_only': 40,  # Floor: drop anything scored below this
             },
             'auto_apply': {
                 'enabled': True,  # Enable CV generation for high-scoring jobs
@@ -83,7 +170,77 @@ class JobHunter:
             },
             'search_terms': {
                 'linkedin': [
-                    # ML/AI focused roles
+                    # ── AU / Sydney (tier 1) ──────────────────────────────
+                    'Machine Learning Engineer Sydney',
+                    'Software Engineer Sydney',
+                    'Backend Engineer Sydney',
+                    'AI Engineer Sydney',
+                    'Full Stack Engineer Sydney',
+                    'Python Engineer Sydney',
+                    'ML Engineer Sydney',
+                    'Data Engineer Sydney',
+                    'Software Engineer Melbourne',
+                    'Machine Learning Engineer Melbourne',
+                    'Backend Engineer Brisbane',
+
+                    # ── EU (tier 1 — AU-EU free trade deal 2026) ──────────
+                    'Machine Learning Engineer London',
+                    'ML Engineer London',
+                    'Software Engineer London',
+                    'Backend Engineer London',
+                    'AI Engineer London',
+                    'Software Engineer Amsterdam',
+                    'Backend Engineer Berlin',
+                    'Python Engineer Dublin',
+                    'ML Engineer Berlin',
+                    'AI Engineer Europe',
+                    'Software Engineer Lisbon',
+                    'Machine Learning Engineer Dublin',
+                    'Software Engineer Stockholm',
+                    'Backend Engineer Copenhagen',
+                    'Python Engineer Zurich',
+                    'ML Engineer Amsterdam',
+
+                    # ── Remote / Freelance / Digital Nomad (tier 1 global) ─
+                    'Remote Machine Learning Engineer',
+                    'Remote Software Engineer Python',
+                    'Remote AI Engineer',
+                    'Remote Backend Engineer',
+                    'Remote Data Engineer',
+                    'Remote Full Stack Engineer',
+                    'Freelance Machine Learning Engineer',
+                    'Freelance Software Engineer',
+                    'Freelance Backend Developer',
+                    'Freelance Python Developer',
+                    'Contract Machine Learning Engineer',
+                    'Contract Software Engineer',
+                    'Contract Python Engineer',
+                    'Digital Nomad Software Engineer',
+                    'Remote First Machine Learning',
+                    'Async Remote Engineer',
+
+                    # ── Middle East / MENA (tier 2) ───────────────────────
+                    'Software Engineer Dubai',
+                    'Machine Learning Engineer Dubai',
+                    'Backend Engineer Dubai',
+                    'Python Engineer Dubai',
+                    'AI Engineer Dubai',
+                    'Software Engineer Abu Dhabi',
+                    'Machine Learning Engineer Tel Aviv',
+                    'Software Engineer Tel Aviv',
+                    'Backend Engineer Tel Aviv',
+                    'AI Engineer Middle East',
+
+                    # ── Latin America / LATAM (tier 2) ────────────────────
+                    'Software Engineer Mexico City',
+                    'Machine Learning Engineer Remote LATAM',
+                    'Backend Engineer Medellin',
+                    'Python Developer Buenos Aires',
+                    'Remote Software Engineer Latin America',
+                    'Software Engineer Colombia',
+                    'ML Engineer Remote South America',
+
+                    # ── Global ML/AI (no location — global feed) ──────────
                     'Machine Learning Engineer',
                     'ML Engineer',
                     'AI Engineer',
@@ -92,31 +249,34 @@ class JobHunter:
                     'AI Product Engineer',
                     'MLOps Engineer',
                     'ML Infrastructure Engineer',
-                    'Machine Learning Platform Engineer',
                     'Computer Vision Engineer',
-                    
-                    # Backend engineering (FibreTrace experience)
-                    'Software Engineer',
+
+                    # ── Backend (Python) global ───────────────────────────
                     'Backend Engineer Python',
                     'Python Software Engineer',
-                    'Python Backend Engineer',
-                    'Backend Software Engineer',
+                    'Software Engineer Python',
                     'API Engineer',
-                    
-                    # Data engineering (supply chain/analytics background)
+
+                    # ── Data / Full-stack global ──────────────────────────
                     'Data Engineer Python',
                     'Analytics Engineer',
-                    'Data Platform Engineer',
-                    
-                    # Full-stack (iOS + backend experience)
-                    'Full Stack Engineer',
                     'Full Stack Python',
                     'Full Stack Machine Learning',
-                    
-                    # iOS/Mobile (Friday Technologies)
-                    'iOS Engineer',
-                    'Swift Developer',
-                    'Mobile Engineer iOS'
+
+                    # ── Domain-specific global ───────────────────────────
+                    'Geospatial Software Engineer',
+                    'Geospatial ML Engineer',
+                    'Climate Tech Engineer',
+                    'Carbon Tech Engineer',
+                    'Environmental Data Engineer',
+                    'GIS Software Engineer',
+
+                    # ── US remote/freelance only (tier 3 for on-site US) ──
+                    'Remote Machine Learning Engineer United States',
+                    'Remote Software Engineer San Francisco',
+                    'Freelance AI Engineer USA',
+                    'Contract Python Engineer New York',
+                    'Remote Backend Engineer Seattle',
                 ],
                 'builtin': [
                     # ML/AI
@@ -124,49 +284,47 @@ class JobHunter:
                     'ai engineer',
                     'ml engineer',
                     'applied scientist',
-                    
+
                     # Backend
                     'software engineer',
                     'backend engineer',
                     'python engineer',
                     'python developer',
                     'backend developer',
-                    
+
                     # Data
                     'analytics engineer',
                     'data engineer',
                     'data platform',
-                    
+
                     # Full-stack
                     'full stack engineer',
-                    'fullstack engineer'
-                ],
-                'yc_jobs': [
-                    # YC-specific searches (similar to LinkedIn)
-                    'machine learning',
-                    'ml engineer',
-                    'ai engineer',
-                    'software engineer',
-                    'backend engineer',
-                    'full stack engineer',
-                    'python engineer'
+                    'fullstack engineer',
+
+                    # Remote / Freelance (BuiltIn has remote filter)
+                    'remote engineer',
+                    'remote machine learning',
                 ],
                 'seek': [
-                    # Seek (Australia) - ML/AI roles
+                    # Seek (Australia) — Sydney-first
                     'Machine Learning Engineer',
                     'ML Engineer',
                     'AI Engineer',
+                    'Data Scientist',
                     'Applied Scientist',
-                    
-                    # Backend/Software roles
-                    'Software Engineer',
-                    'Python Developer',
+                    'MLOps Engineer',
+                    'Software Engineer Python',
                     'Backend Engineer',
+                    'Python Developer',
                     'Backend Developer',
-                    
-                    # Data roles
+                    'Software Engineer',
                     'Data Engineer',
-                    'Analytics Engineer'
+                    'Analytics Engineer',
+                    'Full Stack Engineer',
+                    'Full Stack Developer',
+                    'Platform Engineer',
+                    'Cloud Engineer',
+                    'DevOps Engineer',
                 ]
             },
             'locations': load_scraping_locations(),  # Load from config file
@@ -195,7 +353,7 @@ class JobHunter:
         logger.info("Starting job hunt cycle...")
         start_time = datetime.now()
         
-        stats = {
+        stats: Dict[str, Any] = {
             'jobs_found': 0,
             'jobs_new': 0,
             'jobs_duplicate': 0,
@@ -211,8 +369,23 @@ class JobHunter:
             
             # 2. Filter out duplicates BEFORE fetching descriptions (saves time!)
             logger.info("Filtering duplicates before fetching descriptions...")
+            from datetime import timedelta
+            _MAX_JOB_AGE_DAYS = 30  # Ignore jobs posted more than 30 days ago
+            _stale_cutoff = datetime.utcnow() - timedelta(days=_MAX_JOB_AGE_DAYS)
             new_job_candidates = []
             for job_data in all_jobs:
+                # Staleness check — skip jobs with an explicit posted_date older than 30 days
+                posted_raw = job_data.get('posted_date') or job_data.get('date') or ''
+                if posted_raw:
+                    try:
+                        posted_dt = datetime.fromisoformat(str(posted_raw).replace('Z', ''))
+                        if posted_dt < _stale_cutoff:
+                            logger.debug(f"Skipping stale job (posted {posted_raw}): {job_data.get('title')}")
+                            stats['jobs_duplicate'] += 1
+                            continue
+                    except Exception:
+                        pass  # If we can't parse the date, keep the job
+
                 source_id = job_data.get('source_id')
                 url = job_data.get('url')
                 title = job_data.get('title', '').lower()
@@ -235,7 +408,13 @@ class JobHunter:
                     continue
                 
                 # Check for duplicates by URL, source_id, AND company+title+location (catches reposts)
-                if self.db.job_exists(url=url, source_id=source_id, title=job_data.get('title'), company=company, location=location):
+                if self.db.job_exists(
+                    url=url or "",
+                    source_id=source_id or "",
+                    title=job_data.get('title') or "",
+                    company=company or "",
+                    location=location or ""
+                ):
                     stats['jobs_duplicate'] += 1
                     continue
                 
@@ -243,6 +422,24 @@ class JobHunter:
                 new_job_candidates.append(job_data)
             
             logger.info(f"✓ After deduplication: {len(new_job_candidates)} NEW jobs to process, {stats['jobs_duplicate']} duplicates skipped")
+
+            # 2b. Hard title-exclude: drop clearly irrelevant roles before
+            #     fetching descriptions (saves HTTP requests)
+            hard_excl_kws = [k.lower() for k in HARVEY_PROFILE.get("hard_exclude_title_keywords", [])]
+            if hard_excl_kws:
+                before = len(new_job_candidates)
+                filtered = []
+                for jd in new_job_candidates:
+                    jt = (jd.get('title') or '').lower()
+                    hit = next((kw for kw in hard_excl_kws if kw in jt), None)
+                    if hit:
+                        logger.debug(f"Hard-excluded (title): '{jd.get('title')}' matched '{hit}'")
+                    else:
+                        filtered.append(jd)
+                new_job_candidates = filtered
+                dropped = before - len(new_job_candidates)
+                if dropped:
+                    logger.info(f"Hard title-exclude dropped {dropped} jobs before description fetch")
             
             # 3. Fetch descriptions ONLY for new jobs (huge time saver!)
             logger.info("Fetching descriptions for new jobs only...")
@@ -278,15 +475,37 @@ class JobHunter:
             
             # 4. Score and save new jobs
             new_jobs = []
+            lang_dropped = 0
             for job_data in jobs_with_descriptions:
+                # ── Language filter: drop non-English postings ────────────────
+                lang_text = f"{job_data.get('title', '')} {(job_data.get('description') or '')[:300]}"
+                if not _is_english(lang_text):
+                    logger.debug(f"Dropped (non-English): {job_data.get('title')} @ {job_data.get('company')}")
+                    lang_dropped += 1
+                    continue
+
                 # Score the job
                 score_result = self.scorer.score_job(job_data)
-                
+                job_score = score_result['fit_score']
+
+                # ── Floor check: drop jobs below store_only threshold ──
+                store_floor = self.config['thresholds'].get('store_only', 50)
+                if job_score < store_floor:
+                    logger.debug(
+                        f"Dropped (below floor {store_floor}): "
+                        f"{job_data.get('title')} @ {job_data.get('company')} "
+                        f"(score={job_score})"
+                    )
+                    stats['jobs_duplicate'] += 1  # reuse filtered counter
+                    continue
+
                 # Merge scoring data with job data
+                bd = score_result.get('breakdown', {})
                 job_record = {
                     **job_data,
-                    'fit_score': score_result['fit_score'],
+                    'fit_score': job_score,
                     'reasoning': score_result['reasoning'],
+                    'score_breakdown': bd,
                     'tech_matches': score_result['matches']['tech'],
                     'industry_matches': score_result['matches']['industry'],
                     'role_matches': score_result['matches']['role'],
@@ -301,11 +520,22 @@ class JobHunter:
                     new_jobs.append(job_record)
                     stats['jobs_new'] += 1
                     
-                    logger.debug(f"Saved: {job_record['title']} (Score: {job_record['fit_score']})")
+                    logger.debug(
+                        f"Saved: {job_record['title']} @ {job_record.get('company')} "
+                        f"(Score: {job_score}) | "
+                        f"kw_ai={bd.get('ai_semantic', 0):.1f} "
+                        f"tech={bd.get('technical', 0):.1f} "
+                        f"ind={bd.get('industry', 0):.1f} "
+                        f"role={bd.get('role', 0):.1f} "
+                        f"elig={bd.get('eligibility', 0):.1f} "
+                        f"visa={bd.get('visa', 0):.1f} "
+                        f"loc_ok={score_result.get('location_ok')} "
+                        f"snr_ok={score_result.get('seniority_ok')}"
+                    )
                 except Exception as e:
                     logger.error(f"Error saving job: {e}")
             
-            logger.info(f"Processed {stats['jobs_new']} new jobs ({stats['jobs_duplicate']} duplicates)")
+            logger.info(f"Processed {stats['jobs_new']} new jobs ({stats['jobs_duplicate']} duplicates/filtered, {lang_dropped} non-English dropped)")
             
             # 5. Send alerts for high matches
             if new_jobs:
@@ -456,50 +686,90 @@ class JobHunter:
         return stats
     
     def _scrape_all_sources(self) -> List[Dict[str, Any]]:
-        """Scrape jobs from all enabled sources across all configured locations"""
+        """Scrape jobs with source-specific run strategy for efficiency."""
         all_jobs = []
         seen_job_ids = set()  # Track unique jobs by source_id or URL
         
         locations = self.config.get('locations', ['New York, NY'])  # Default to NYC if not specified
-        
+
+        def _add_jobs(jobs: List[Dict[str, Any]]) -> int:
+            """Deduplicate within this scrape run and append unique jobs."""
+            unique_jobs_count = 0
+            for job in jobs:
+                job_id = job.get('source_id') or job.get('url')
+                if job_id and job_id not in seen_job_ids:
+                    seen_job_ids.add(job_id)
+                    all_jobs.append(job)
+                    unique_jobs_count += 1
+            return unique_jobs_count
+
+        def _safe_source_key(source_name: str, scope: str) -> str:
+            normalized = scope.replace(', ', '_').replace(' ', '_')
+            return f"{source_name}_{normalized}"
+
+        # Strategy groups:
+        # 1) LinkedIn runs per location
+        # 2) BuiltIn runs once for all locations (it handles location filtering internally)
+        # 3) All other scrapers run once per job hunt (global / region-aware internally)
+        per_location_scrapers = {'linkedin'}
+        single_run_scrapers = set(self.scrapers.keys()) - per_location_scrapers
+
+        # Run per-location scrapers
         for location in locations:
-            logger.info(f"Scraping jobs for location: {location}")
-            
-            for source_name, scraper in self.scrapers.items():
+            logger.info(f"Scraping per-location sources for: {location}")
+            for source_name in per_location_scrapers:
+                scraper = self.scrapers.get(source_name)
+                if not scraper:
+                    continue
                 try:
                     logger.info(f"  → {source_name} ({location})...")
-                    
                     search_terms = self.config['search_terms'].get(source_name, [])
-                    
                     jobs = scraper.search_jobs(search_terms, location)
-                    
-                    # Deduplicate within this scrape run
-                    unique_jobs_count = 0
-                    for job in jobs:
-                        # Use source_id for deduplication (more reliable than URL)
-                        job_id = job.get('source_id') or job.get('url')
-                        if job_id and job_id not in seen_job_ids:
-                            seen_job_ids.add(job_id)
-                            all_jobs.append(job)
-                            unique_jobs_count += 1
-                    
-                    logger.info(f"    Got {len(jobs)} jobs from {source_name} in {location} ({unique_jobs_count} unique)")
-                    
-                    # Log individual source+location history
+                    unique_jobs_count = _add_jobs(jobs)
+                    logger.info(
+                        f"    Got {len(jobs)} jobs from {source_name} in {location} ({unique_jobs_count} unique)"
+                    )
                     self.db.add_search_history({
-                        'source': f"{source_name}_{location.replace(', ', '_').replace(' ', '_')}",
+                        'source': _safe_source_key(source_name, location),
                         'jobs_found': len(jobs),
                         'success': True
                     })
-                    
                 except Exception as e:
                     logger.error(f"  ✗ Error scraping {source_name} ({location}): {e}")
                     self.db.add_search_history({
-                        'source': f"{source_name}_{location.replace(', ', '_').replace(' ', '_')}",
+                        'source': _safe_source_key(source_name, location),
                         'jobs_found': 0,
                         'success': False,
                         'errors': str(e)
                     })
+
+        # Run all other scrapers once
+        all_locations_str = ", ".join(locations) if locations else "global"
+        for source_name in sorted(single_run_scrapers):
+            scraper = self.scrapers.get(source_name)
+            if not scraper:
+                continue
+            try:
+                logger.info(f"  → {source_name} (single-run across locations)...")
+                search_terms = self.config['search_terms'].get(source_name, [])
+                jobs = scraper.search_jobs(search_terms, all_locations_str)
+                unique_jobs_count = _add_jobs(jobs)
+                logger.info(
+                    f"    Got {len(jobs)} jobs from {source_name} (single-run) ({unique_jobs_count} unique)"
+                )
+                self.db.add_search_history({
+                    'source': _safe_source_key(source_name, "single_run"),
+                    'jobs_found': len(jobs),
+                    'success': True
+                })
+            except Exception as e:
+                logger.error(f"  ✗ Error scraping {source_name} (single-run): {e}")
+                self.db.add_search_history({
+                    'source': _safe_source_key(source_name, "single_run"),
+                    'jobs_found': 0,
+                    'success': False,
+                    'errors': str(e)
+                })
         
         logger.info(f"Total jobs scraped across all locations: {len(all_jobs)} unique jobs from {len(seen_job_ids)} total")
         return all_jobs

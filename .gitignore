@@ -57,5 +57,27 @@ tmp/
 temp/
 *.tmp
 
+# Backup files (editor/manual backups — never commit)
+*.bak
+*.bak2
+*.bak3
+
+# IDE / tooling config
+pyrightconfig.json
+.vscode/
+
+# Profile backup/scratch files
+src/profile_backup*.py
+src/profile_broken*.py
+
 # Generated applications (CVs, cover letters)
 applications/
+applications_old/
+
+# User profile (contains personal data — never commit)
+config/user_profile.json
+config/locations.json
+config/auto_submit.json
+
+# CV / resume PDFs
+*.pdf

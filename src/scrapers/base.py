@@ -32,7 +32,7 @@ class BaseScraper(ABC):
         }
     
     def fetch_page(self, url: str) -> str:
-        """Fetch a page with retry logic"""
+        """Fetch a page with retry logic and exponential back-off."""
         for attempt in range(self.max_retries):
             try:
                 time.sleep(self.request_delay)  # Rate limiting
@@ -43,7 +43,14 @@ class BaseScraper(ABC):
                 logger.warning(f"Attempt {attempt + 1} failed for {url}: {e}")
                 if attempt == self.max_retries - 1:
                     raise
-                time.sleep(5)  # Wait before retry
+                # Exponential back-off: 10s, 20s, 40s …
+                # SSL/connection errors get a longer initial pause (rate-limit signal)
+                err_str = str(e).lower()
+                is_rate_signal = any(k in err_str for k in ("ssl", "eof", "connection", "timeout"))
+                base_wait = 20 if is_rate_signal else 5
+                wait = base_wait * (2 ** attempt)
+                logger.info(f"Waiting {wait}s before retry {attempt + 2}…")
+                time.sleep(wait)
         return ""
     
     @abstractmethod

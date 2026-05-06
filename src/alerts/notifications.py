@@ -2,10 +2,39 @@
 Alert delivery system
 Sends email and SMS notifications for high-match jobs
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import os
 from loguru import logger
+
+
+def _location_flag(location: str) -> str:
+    """Return a geo emoji so Harvey can instantly see where the job is."""
+    loc = (location or '').lower()
+    if any(k in loc for k in ['remote', 'anywhere', 'distributed', 'global']):
+        return '🌍'
+    if any(k in loc for k in ['australia', 'melbourne', 'sydney', 'brisbane', 'gold coast', 'canberra']):
+        return '🇦🇺'
+    if any(k in loc for k in ['london', 'united kingdom', 'england', 'scotland', 'ireland', 'dublin']):
+        return '🇬🇧'
+    if any(k in loc for k in ['amsterdam', 'netherlands']):
+        return '🇳🇱'
+    if any(k in loc for k in ['berlin', 'germany', 'munich']):
+        return '🇩🇪'
+    if any(k in loc for k in ['lisbon', 'portugal']):
+        return '🇵🇹'
+    if any(k in loc for k in ['barcelona', 'spain', 'madrid']):
+        return '🇪🇸'
+    if any(k in loc for k in ['paris', 'france']):
+        return '🇫🇷'
+    if any(k in loc for k in ['toronto', 'vancouver', 'canada', 'montreal']):
+        return '🇨🇦'
+    if any(k in loc for k in ['singapore']):
+        return '🇸🇬'
+    if any(k in loc for k in ['new york', 'san francisco', 'seattle', 'los angeles', 'boston',
+                               'austin', 'chicago', 'united states', ', ca', ', ny', ', wa']):
+        return '🇺🇸'
+    return '📍'
 
 
 class EmailAlerter:
@@ -31,10 +60,12 @@ class EmailAlerter:
         if not self.enabled:
             logger.info(f"Email alerts disabled. Would send alert for: {job.get('title')}")
             return False
-        
-        subject = f"🎯 High-Match Job: {job.get('title')} at {job.get('company')}"
+
+        location = job.get('location', '')
+        location_flag = _location_flag(location)
+        subject = f"🎯 {location_flag} {job.get('title')} at {job.get('company')} — {int(job.get('fit_score', 0))}% match"
         body = self._format_job_email(job, alert_type="immediate")
-        
+
         return self._send_email(recipient, subject, body)
     
     def send_digest(self, jobs: List[Dict[str, Any]], recipient: str) -> bool:
@@ -343,15 +374,15 @@ class EmailAlerter:
             
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
-            msg['From'] = self.smtp_user
+            msg['From'] = self.smtp_user or ""
             msg['To'] = recipient
             
             html_part = MIMEText(html_body, 'html')
             msg.attach(html_part)
             
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_host or "", self.smtp_port) as server:
                 server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
+                server.login(self.smtp_user or "", self.smtp_pass or "")
                 server.send_message(msg)
             
             logger.info(f"Email sent to {recipient}: {subject}")
@@ -419,7 +450,7 @@ class SMSAlerter:
 class AlertManager:
     """Manages all alert delivery"""
     
-    def __init__(self, email_provider: str = None, db = None):
+    def __init__(self, email_provider: Optional[str] = None, db=None):
         """
         Initialize alert manager
         

@@ -1,72 +1,171 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Statistics - JobHunter</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Statistics · JobHunter</title>
+  <link rel="stylesheet" href="/static/style.css?v=3.0">
 </head>
 <body>
-    <div class="page">
-        <div class="header">
-            <div class="brand">JobHunter</div>
-            <div class="nav">
-                <a href="/">All Jobs</a>
-                <a href="/applied">My Applications</a>
-                <a href="/stats">Statistics</a>
-            </div>
-        </div>
+<div class="shell">
 
-        <section class="panel">
-            <div class="section-title">
-                <div>
-                    <h2>Progress overview</h2>
-                    <div class="subtle">Conversion across the funnel plus status breakdown. Total jobs = all jobs ever added to database.</div>
-                </div>
-                <div class="pill">{{ stats.total_jobs }} in database</div>
-            </div>
-
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Total Jobs</h3>
-                    <div class="value">{{ stats.total_jobs }}</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Applied</h3>
-                    <div class="value">{{ stats.applied }}</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Phone Screens</h3>
-                    <div class="value">{{ stats.phone_screens }}</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Interviews</h3>
-                    <div class="value">{{ stats.interviews }}</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Offers</h3>
-                    <div class="value">{{ stats.offers }}</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Rejections</h3>
-                    <div class="value">{{ stats.rejected }}</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Response Rate</h3>
-                    <div class="value">{{ "%.1f"|format(stats.response_rate) }}%</div>
-                </div>
-            </div>
-
-            <div class="section-title" style="margin-top: 10px;">
-                <h2>Job status breakdown</h2>
-            </div>
-            <div class="stats-grid">
-                {% for status, count in status_counts.items() %}
-                <div class="stat-card">
-                    <h3>{{ status.replace('_', ' ').title() }}</h3>
-                    <div class="value">{{ count }}</div>
-                </div>
-                {% endfor %}
-            </div>
-        </section>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-logo">JH</div>
+      <span class="brand-name">JobHunter</span>
     </div>
+    <div class="topbar-pills">
+      <div class="t-pill"><span class="label">Jobs tracked</span><span class="val g">{{ stats.total_jobs|default(0) }}</span></div>
+      <div class="t-pill"><span class="label">Response rate</span><span class="val">{{ "%.1f"|format(stats.response_rate|default(0)) }}%</span></div>
+    </div>
+    <div class="topbar-end">
+      <a class="btn btn-outline" href="/">← Dashboard</a>
+      <a class="btn btn-ghost" href="/applied">Applications</a>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="sb-section">
+      <div class="sb-label">Views</div>
+      <a class="nav-link" href="/">All new jobs</a>
+      <a class="nav-link" href="/applied">Applied</a>
+      <a class="nav-link active" href="/stats">Statistics</a>
+      <a class="nav-link" href="/settings">Settings</a>
+      <a class="nav-link" href="/setup">Setup / Profile</a>
+    </div>
+    <div class="sb-section">
+      <div class="sb-label">By status</div>
+      {% for slug, label in [('new','New'),('applied','Applied'),('phone_screen','Phone screen'),('interview','Interview'),('offer','Offer'),('rejected','Rejected')] %}
+      <div class="market-item">
+        <span class="mname">{{ label }}</span>
+        <span class="mcount">{{ status_counts.get(slug, 0) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="stat-strip">
+      <div class="stat-cell"><div class="sc-label">Total jobs</div><div class="sc-val">{{ stats.total_jobs|default(0) }}</div><div class="sc-sub">tracked</div></div>
+      <div class="stat-cell"><div class="sc-label">Applied</div><div class="sc-val g">{{ stats.applied|default(0) }}</div><div class="sc-sub">sent</div></div>
+      <div class="stat-cell"><div class="sc-label">Phone screens</div><div class="sc-val g">{{ stats.phone_screens|default(0) }}</div><div class="sc-sub">booked</div></div>
+      <div class="stat-cell"><div class="sc-label">Interviews</div><div class="sc-val g">{{ stats.interviews|default(0) }}</div><div class="sc-sub">scheduled</div></div>
+      <div class="stat-cell"><div class="sc-label">Offers</div><div class="sc-val y">{{ stats.offers|default(0) }}</div><div class="sc-sub">received</div></div>
+      <div class="stat-cell"><div class="sc-label">Response rate</div><div class="sc-val">{{ "%.1f"|format(stats.response_rate|default(0)) }}%</div><div class="sc-sub">of applied</div></div>
+    </div>
+
+    {# ── Funnel ── #}
+    {% set applied_n    = stats.applied|default(0)|int %}
+    {% set screens_n    = stats.phone_screens|default(0)|int %}
+    {% set interviews_n = stats.interviews|default(0)|int %}
+    {% set offers_n     = stats.offers|default(0)|int %}
+    {% set total_n      = [stats.total_jobs|default(1)|int, 1]|max %}
+
+    <div class="tier-section">
+      <div class="tier-header">
+        <span class="tier-label tier-s">▸ Application funnel</span>
+        <span class="tier-count">conversion pipeline</span>
+      </div>
+      <div class="tier-body stats-pad">
+        <div class="funnel">
+
+          <div class="funnel-row">
+            <div class="funnel-lbl">Applied</div>
+            <div class="funnel-bar"><div class="funnel-fill ffill-green" data-pct="{{ ([applied_n, total_n]|min / total_n * 100)|round(0)|int }}"></div></div>
+            <div class="funnel-n">{{ applied_n }}</div>
+            <div class="funnel-pct">{{ (applied_n / total_n * 100)|round(0)|int }}%</div>
+          </div>
+
+          <div class="conv-arrow">↓ {{ (screens_n / [applied_n,1]|max * 100)|round(0)|int }}% progressed to screen</div>
+
+          <div class="funnel-row">
+            <div class="funnel-lbl">Phone screen</div>
+            <div class="funnel-bar"><div class="funnel-fill ffill-blue" data-pct="{{ (screens_n / [applied_n,1]|max * 100)|round(0)|int }}"></div></div>
+            <div class="funnel-n">{{ screens_n }}</div>
+            <div class="funnel-pct">{{ (screens_n / [applied_n,1]|max * 100)|round(0)|int }}%</div>
+          </div>
+
+          <div class="conv-arrow">↓ {{ (interviews_n / [screens_n,1]|max * 100)|round(0)|int }}% progressed to interview</div>
+
+          <div class="funnel-row">
+            <div class="funnel-lbl">Interview</div>
+            <div class="funnel-bar"><div class="funnel-fill ffill-purple" data-pct="{{ (interviews_n / [applied_n,1]|max * 100)|round(0)|int }}"></div></div>
+            <div class="funnel-n">{{ interviews_n }}</div>
+            <div class="funnel-pct">{{ (interviews_n / [applied_n,1]|max * 100)|round(0)|int }}%</div>
+          </div>
+
+          <div class="conv-arrow">↓ {{ (offers_n / [interviews_n,1]|max * 100)|round(0)|int }}% progressed to offer</div>
+
+          <div class="funnel-row">
+            <div class="funnel-lbl">Offer</div>
+            <div class="funnel-bar"><div class="funnel-fill ffill-yellow" data-pct="{{ (offers_n / [applied_n,1]|max * 100)|round(0)|int }}"></div></div>
+            <div class="funnel-n">{{ offers_n }}</div>
+            <div class="funnel-pct">{{ (offers_n / [applied_n,1]|max * 100)|round(0)|int }}%</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ── Status breakdown cards ── #}
+    <div class="tier-section" style="margin-top:20px">
+      <div class="tier-header">
+        <span class="tier-label tier-a">▸ Status breakdown</span>
+        <span class="tier-count">all tracked jobs</span>
+      </div>
+      <div class="tier-body stats-pad">
+        <div class="stat-cards">
+          {% for slug, label in [('new','New'),('applied','Applied'),('phone_screen','Phone screen'),('interview','Interview'),('offer','Offer'),('rejected','Rejected')] %}
+            {% set n = status_counts.get(slug,0)|int %}
+            {% set pct = (n / total_n * 100)|round(1) %}
+            <div class="stat-card stat-card-{{ slug.replace('_','-') }}">
+              <div class="scard-lbl">{{ label }}</div>
+              <div class="scard-val">{{ n }}</div>
+              <div class="funnel-bar" style="margin-top:8px">
+                <div class="funnel-fill scard-fill-{{ slug.replace('_','-') }}" data-pct="{{ [pct|int, 100]|min }}"></div>
+              </div>
+              <div class="scard-pct">{{ pct }}% of total</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# ── Conversion rates ── #}
+    <div class="tier-section" style="margin-top:20px">
+      <div class="tier-header">
+        <span class="tier-label tier-b">▸ Conversion rates</span>
+        <span class="tier-count">stage-over-stage</span>
+      </div>
+      <div class="tier-body stats-pad">
+        <div class="conv-cards">
+          <div class="conv-card">
+            <div class="ccard-lbl">Applied → Screen</div>
+            <div class="ccard-val cval-blue">{{ (screens_n / [applied_n,1]|max * 100)|round(1) }}%</div>
+            <div class="ccard-sub">{{ screens_n }} / {{ applied_n }}</div>
+          </div>
+          <div class="conv-card">
+            <div class="ccard-lbl">Screen → Interview</div>
+            <div class="ccard-val cval-purple">{{ (interviews_n / [screens_n,1]|max * 100)|round(1) }}%</div>
+            <div class="ccard-sub">{{ interviews_n }} / {{ screens_n }}</div>
+          </div>
+          <div class="conv-card">
+            <div class="ccard-lbl">Interview → Offer</div>
+            <div class="ccard-val cval-yellow">{{ (offers_n / [interviews_n,1]|max * 100)|round(1) }}%</div>
+            <div class="ccard-sub">{{ offers_n }} / {{ interviews_n }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('.funnel-fill[data-pct]').forEach(el => {
+  el.style.width = (el.dataset.pct || 0) + '%';
+});
+</script>
 </body>
 </html>

@@ -85,17 +85,49 @@ def should_activate_job_board(board_name: str) -> bool:
     
     # Job board to country mapping
     board_countries = {
-        'seek': ['AU'],  # Australia & NZ
-        'reed': ['UK'],  # United Kingdom
+        'seek': ['AU'],           # Australia & NZ
+        'reed': ['UK'],           # United Kingdom
         'indeed_uk': ['UK'],
         'indeed_au': ['AU'],
         'indeed_ca': ['CA'],
-        'linkedin': ['US', 'AU', 'UK', 'CA', 'DE', 'SG'],  # Global
-        'builtin': ['US'],  # US tech hubs only
-        'ycombinator': ['US', 'AU', 'UK', 'CA', 'DE', 'SG']  # YC is global
+        # LinkedIn & YC are global — activate whenever ANY location is enabled
+        'linkedin': ['US', 'AU', 'UK', 'CA', 'DE', 'NL', 'IE', 'PT', 'ES', 'FR', 'SG', 'GLOBAL'],
+        'builtin': ['US'],
+        'ycombinator': ['US', 'UK', 'CA', 'DE', 'NL', 'IE', 'SG', 'GLOBAL'],
+        'yc_jobs':     ['US', 'UK', 'CA', 'DE', 'NL', 'IE', 'SG', 'GLOBAL'],
     }
     
     required_countries = board_countries.get(board_name, [])
     
     # Activate if any active country matches the board's countries
     return any(country in active_countries for country in required_countries)
+
+
+def get_active_regions() -> List[str]:
+    """
+    Map active country codes to high-level region labels.
+    Returns e.g. ['Europe', 'Latin America', 'Middle East', 'Australia', 'Global']
+    """
+    active_countries = get_active_countries()
+    regions: List[str] = ['Global']  # always active
+
+    eu_codes  = {'UK', 'DE', 'NL', 'IE', 'PT', 'ES', 'SE', 'DK', 'AT', 'CH', 'FR', 'BE', 'IT'}
+    me_codes  = {'AE', 'IL', 'SA', 'QA', 'KW', 'BH'}
+    latam_codes = {'MX', 'CO', 'AR', 'UY', 'BR', 'CL', 'PE'}
+    au_codes  = {'AU', 'NZ'}
+    apac_codes = {'SG', 'JP', 'KR', 'HK'}
+
+    if any(c in active_countries for c in eu_codes):
+        regions.append('Europe')
+    if any(c in active_countries for c in me_codes):
+        regions.append('Middle East')
+    if any(c in active_countries for c in latam_codes):
+        regions.append('Latin America')
+    if any(c in active_countries for c in au_codes):
+        regions.append('Australia')
+    if any(c in active_countries for c in apac_codes):
+        regions.append('Asia Pacific')
+    if 'US' in active_countries:
+        regions.append('United States')
+
+    return regions
