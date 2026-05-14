@@ -1,167 +1,121 @@
-# JobHunter - Automated Job-Hunting & Alert System
+# JobHunter
 
-**Built for Harvey J. Houlahan**
+Built this in a New York winter because it was too cold to go outside and I needed a job. Started as a tool to help my mates find work too, then it got out of hand.
 
-## Overview
-
-An intelligent, automated job monitoring system that continuously scans multiple job boards, evaluates listings against Harvey's profile, and sends real-time alerts for high-match opportunities.
-
-### Core Features
-
-- **Multi-Source Monitoring**: LinkedIn, BuiltIn, Y Combinator, Seek (Australia), and more
-- **Smart Matching**: 0-100 fit scoring based on tech stack, industry, role, and visa sponsorship
-- **Real-Time Alerts**: Email/SMS notifications for high-quality matches
-- **E-3 Visa Optimization**: Prioritizes visa-friendly employers
-- **Deduplication**: Prevents duplicate alerts across sources
-- **Continuous Operation**: Runs every 3 hours automatically
-- **Global Coverage**: US and Australian job markets with location-based scraper activation
-
-## Architecture
-
-```
-JobHunter/
-├── src/
-│   ├── scrapers/          # Job board connectors
-│   ├── parsers/           # NLP extraction & parsing
-│   ├── scoring/           # Fit score calculation
-│   ├── alerts/            # Notification delivery
-│   ├── database/          # Storage layer
-│   └── scheduler/         # Orchestration
-├── config/
-│   └── settings.yaml      # Configuration
-├── data/
-│   └── jobhunter.db       # SQLite database
-├── tests/
-└── requirements.txt
-```
-
-## Quick Start
-
-### Installation
-
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure settings
-cp config/settings.example.yaml config/settings.yaml
-# Edit settings.yaml with your email/API keys
-```
-
-### Running
-
-```bash
-# Run once manually
-python src/main.py
-
-# Run with scheduler
-python src/scheduler/run.py
-
-# Deploy as cron (every 3 hours)
-crontab -e
-# Add: 0 */3 * * * cd /path/to/JobHunter && /path/to/venv/bin/python src/main.py
-```
-
-## Fit Scoring Algorithm
-
-Jobs are scored 0-100 based on:
-
-| Category | Weight | Criteria |
-|----------|--------|----------|
-| **Technical Stack** | 40% | Python, Swift, TypeScript, AWS, ML/AI frameworks, React, etc. |
-| **Industry** | 25% | Fashion tech, Sustainability, Healthcare, AI/ML, Marketplaces |
-| **Role** | 20% | ML Engineer, Software Engineer, Full-Stack, iOS, Backend |
-| **Visa Friendliness** | 15% | E-3 mentions, sponsorship availability |
-
-### Alert Thresholds
-
-- **≥70**: Immediate push notification
-- **50-69**: Daily digest
-- **<50**: Store only (no alert)
-
-## Harvey's Profile
-
-The system matches against:
-
-**Core Skills**: AI/ML (LLMs, NLP, CoreML), Python, Swift/SwiftUI, TypeScript/React, AWS, IoT, Data Engineering
-
-**Industries**: Fashion tech, Sustainability, Healthcare, AI/ML, Marketplaces
-
-**Target Roles**: ML Engineer, Software Engineer, Full-Stack Engineer, iOS Engineer
-
-**Location**: NYC or Remote (US)
-
-**Visa**: E-3 sponsorship required
-
-## Configuration
-
-Edit `config/settings.yaml`:
-
-```yaml
-alerts:
-  email: harvey@example.com
-  sms: "+1234567890"  # Optional
-  
-thresholds:
-  immediate: 70
-  digest: 50
-  
-schedule:
-  interval_hours: 3
-  
-sources:
-  - linkedin
-  - indeed
-  - ziprecruiter
-  - angellist
-```
-
-## Deployment Options
-
-### 1. AWS Lambda (Serverless)
-- Use EventBridge for scheduling
-- DynamoDB for storage
-- SES for email alerts
-
-### 2. Docker Container
-- Deploy to EC2/Digital Ocean
-- Use cron for scheduling
-- Self-contained and portable
-
-### 3. Local Machine
-- Simple cron job
-- SQLite database
-- Email via SMTP
-
-## Database Schema
-
-**jobs** table:
-- id, title, company, url, description, posted_date
-- source, fit_score, reasoning
-- tech_matches, industry_matches, visa_status
-- created_at, clicked, applied
-
-**search_history** table:
-- timestamp, source, jobs_found, errors
-
-## API & Dashboard (Optional)
-
-Future enhancement: Web dashboard at `http://localhost:5000`
-
-- View all active opportunities
-- Filter by score/industry/source
-- Mark as applied/rejected
-- Analytics and trends
-
-## License
-
-Private use - Harvey J. Houlahan
+Autonomous job matching engine that scrapes, deduplicates, and semantically scores thousands of listings per run against a structured candidate profile. Hybrid scoring: keyword signals, sentence-transformer embeddings, location/visa/seniority gating, and an LLM pass for high-confidence matches with live company research. It found me interviews at two sovereign AI startups in the same week.
 
 ---
 
-**Status**: In Development
-**Last Updated**: November 2025
+## What it does
+
+1. **Scrapes** LinkedIn, BuiltIn, Y Combinator, and Seek on a 3-hour cron
+2. **Deduplicates** across sources using URL + title normalisation
+3. **Scores** every listing 0–100 against a structured candidate profile (skills, industries, visa status, seniority, location)
+4. **Gates** top matches through an LLM (Kimi/Moonshot) for deeper reasoning and company context
+5. **Alerts** immediately on high matches (≥78), batches the rest into a daily digest
+6. **Dashboard** — Flask web UI to review, score-filter, generate tailored CVs, and track applications
+
+---
+
+## Scoring pipeline
+
+| Stage | Method | Signal |
+|---|---|---|
+| Hard gates | Rule-based | Visa status, seniority, location feasibility |
+| Keyword match | Weighted token overlap | Tech stack, role titles, industries |
+| Semantic match | Sentence-transformer embeddings | Meaning-level skill/role alignment |
+| LLM gate | Kimi `moonshot-v1-8k` | Company quality, role fit, reasoning |
+
+Scores below 40 are dropped silently. Scores ≥78 trigger an immediate email alert.
+
+---
+
+## Setup
+
+### Prerequisites
+- Python 3.11+
+- `KIMI_API_KEY` (Moonshot AI — used for scoring, cover letters, CV generation, and setup onboarding)
+- `GMAIL_USER` + `GMAIL_APP_PASSWORD` for email alerts (optional)
+
+### Install
+
+```bash
+git clone https://github.com/harveyhoulahan/JobHunter
+cd JobHunter
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env        # fill in your keys
+```
+
+### First run — profile setup
+
+```bash
+python web_app.py           # starts on http://localhost:5002
+# visit /setup — upload your CV (+ optional docs)
+# Kimi extracts your full profile and search terms automatically
+```
+
+### Run the scraper
+
+```bash
+python src/main.py          # single run
+python src/scheduler/run.py # continuous (every 3 hours)
+```
+
+### Dashboard
+
+```bash
+python web_app.py           # http://localhost:5002
+```
+
+---
+
+## Project structure
+
+```
+JobHunter/
+├── web_app.py              # Flask dashboard + API
+├── src/
+│   ├── main.py             # Orchestrator
+│   ├── profile.py          # Candidate profile loader
+│   ├── scrapers/           # LinkedIn, BuiltIn, Seek, YC scrapers
+│   ├── scoring/            # Hybrid scoring engine + AI scorer
+│   ├── alerts/             # Email/SMS alert delivery
+│   ├── applying/           # CV generator, cover letter generator
+│   ├── database/           # SQLite models + query layer
+│   ├── scheduler/          # Cron runner
+│   └── tools/              # DB pruning, score audit utilities
+├── scripts/                # One-off maintenance scripts
+├── tests/                  # Test suite
+├── config/                 # Runtime config (gitignored)
+├── templates/              # Jinja2 HTML templates
+├── static/                 # CSS / JS
+├── Dockerfile
+├── docker-compose.yml
+├── railway.json            # Railway deployment config
+└── render.yaml             # Render deployment config
+```
+
+---
+
+## Deployment
+
+The app runs as a single Flask process. Deploy anywhere that can run Python:
+
+**Railway / Render** — configs included (`railway.json`, `render.yaml`)
+
+**Docker**
+```bash
+docker compose up --build
+```
+
+**Self-hosted cron**
+```bash
+# Add to crontab — runs scraper every 3 hours
+0 */3 * * * cd /path/to/JobHunter && venv/bin/python src/scheduler/run.py
+```
+
+---
+
+## Personalising for your own use
+

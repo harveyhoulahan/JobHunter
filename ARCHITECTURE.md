@@ -1,384 +1,103 @@
-# System Architecture
+# Architecture
 
-## Overview
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        JobHunter System                         │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────┐
-│   Scheduler/Cron        │  Every 3 hours
-│   (src/scheduler/)      │
-└───────────┬─────────────┘
-            │
-            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Main Orchestrator                          │
-│                      (src/main.py)                              │
-│                                                                 │
-│  1. Scrape jobs from sources                                   │
-│  2. Score each job against profile                             │
-│  3. Store in database                                          │
-│  4. Send alerts for high matches                               │
-└─────────────────────────────────────────────────────────────────┘
-            │
-            ├──────────────┬──────────────┬──────────────┬─────────
-            ▼              ▼              ▼              ▼
-┌─────────────────┐ ┌─────────────┐ ┌──────────┐ ┌──────────────┐
-│   Job Scrapers  │ │   Scoring   │ │ Database │ │    Alerts    │
-│                 │ │   Engine    │ │  Layer   │ │   System     │
-└─────────────────┘ └─────────────┘ └──────────┘ └──────────────┘
-```
-
-## Component Details
-
-### 1. Job Scrapers (`src/scrapers/`)
-```
-┌──────────────────────────────────────────────┐
-│           Scraper Architecture               │
-├──────────────────────────────────────────────┤
-│                                              │
-│  BaseScraper (Abstract)                      │
-│  ├── Rate limiting (2-3 sec delays)          │
-│  ├── Retry logic (3 attempts)               │
-│  ├── Error handling                          │
-│  └── User agent rotation                     │
-│                                              │
-│  Implementations:                            │
-│  ├── IndeedScraper                           │
-│  ├── LinkedInScraper                         │
-│  ├── ZipRecruiterScraper                     │
-│  ├── AngelListScraper (future)               │
-│  └── BuiltInNYCScraper (future)              │
-│                                              │
-│  Output: JobListing objects                  │
-│  ├── title                                   │
-│  ├── company                                 │
-│  ├── url (unique identifier)                 │
-│  ├── description                             │
-│  ├── location                                │
-│  └── posted_date                             │
-└──────────────────────────────────────────────┘
-```
-
-### 2. Scoring Engine (`src/scoring/`)
-```
-┌──────────────────────────────────────────────┐
-│           Scoring Algorithm                  │
-├──────────────────────────────────────────────┤
-│                                              │
-│  Input: Job listing text                     │
-│                                              │
-│  Harvey's Profile (src/profile.py)           │
-│  ├── Skills: [Python, ML, Swift, AWS...]    │
-│  ├── Industries: [Fashion, AI, Health...]   │
-│  ├── Roles: [ML Eng, SWE, iOS Eng...]       │
-│  └── Visa: E-3 requirements                  │
-│                                              │
-│  Scoring Components (0-100 each):            │
-│  ┌────────────────────────────────┐          │
-│  │ Technical Stack Match    (40%) │          │
-│  │ ├── Regex pattern matching     │          │
-│  │ ├── Keyword extraction          │          │
-│  │ └── Scoring: log scale          │          │
-│  └────────────────────────────────┘          │
-│                                              │
-│  ┌────────────────────────────────┐          │
-│  │ Industry Match          (25%)  │          │
-│  │ ├── Fashion tech                │          │
-│  │ ├── Sustainability              │          │
-│  │ ├── Healthcare                  │          │
-│  │ └── AI/ML                       │          │
-│  └────────────────────────────────┘          │
-│                                              │
-│  ┌────────────────────────────────┐          │
-│  │ Role Match              (20%)  │          │
-│  │ ├── Title match (priority)     │          │
-│  │ └── Description match           │          │
-│  └────────────────────────────────┘          │
-│                                              │
-│  ┌────────────────────────────────┐          │
-│  │ Visa Friendliness       (15%)  │          │
-│  │ ├── Explicit: E-3, sponsor     │          │
-│  │ ├── Excluded: no sponsorship   │          │
-│  │ └── None: unclear               │          │
-│  └────────────────────────────────┘          │
-│                                              │
-│  Penalties:                                  │
-│  ├── Wrong location: 0.5x                    │
-│  └── Senior role: 0.3x                       │
-│                                              │
-│  Output: Fit score (0-100) + reasoning       │
-└──────────────────────────────────────────────┘
-```
-
-### 3. Database Layer (`src/database/`)
-```
-┌──────────────────────────────────────────────┐
-│           Database Schema (SQLite)           │
-├──────────────────────────────────────────────┤
-│                                              │
-│  Table: jobs                                 │
-│  ├── id (PK)                                 │
-│  ├── title, company, url (UNIQUE)           │
-│  ├── description, location, posted_date      │
-│  ├── source (indeed, linkedin, etc.)         │
-│  ├── fit_score (Float)                       │
-│  ├── reasoning (Text)                        │
-│  ├── tech_matches (JSON)                     │
-│  ├── industry_matches (JSON)                 │
-│  ├── role_matches (JSON)                     │
-│  ├── visa_status (String)                    │
-│  ├── clicked, applied, rejected (Bool)       │
-│  ├── created_at, alerted_at (DateTime)       │
-│  └── notes (Text)                            │
-│                                              │
-│  Table: search_history                       │
-│  ├── timestamp, source                       │
-│  ├── jobs_found, jobs_new, jobs_duplicate    │
-│  └── duration_seconds, errors, success       │
-│                                              │
-│  Table: alerts                               │
-│  ├── job_id, alert_type, channel             │
-│  ├── recipient, sent_at                      │
-│  └── success, error_message                  │
-│                                              │
-│  Indexes:                                    │
-│  ├── idx_url (for deduplication)             │
-│  ├── idx_fit_score (for alerting)            │
-│  └── idx_created_at (for time queries)       │
-└──────────────────────────────────────────────┘
-```
-
-### 4. Alert System (`src/alerts/`)
-```
-┌──────────────────────────────────────────────┐
-│           Alert Delivery Flow                │
-├──────────────────────────────────────────────┤
-│                                              │
-│  New Jobs from Database                      │
-│         ▼                                    │
-│  ┌──────────────────┐                        │
-│  │ Alert Manager    │                        │
-│  └──────────────────┘                        │
-│         │                                    │
-│         ├─── Score >= 70 ───┐                │
-│         │                   ▼                │
-│         │          ┌─────────────────┐       │
-│         │          │ Immediate Alert │       │
-│         │          └─────────────────┘       │
-│         │                   │                │
-│         │                   ├─ Email ─┐      │
-│         │                   └─ SMS ───┤      │
-│         │                             ▼      │
-│         │                    ┌──────────────┐│
-│         │                    │ SendGrid/    ││
-│         │                    │ SMTP/Twilio  ││
-│         │                    └──────────────┘│
-│         │                                    │
-│         └─── 50 <= Score < 70 ───┐           │
-│                                  ▼           │
-│                        ┌──────────────┐      │
-│                        │ Daily Digest │      │
-│                        └──────────────┘      │
-│                                              │
-│  Email Format:                               │
-│  ├── HTML formatted                          │
-│  ├── Fit score prominently displayed         │
-│  ├── Key matches highlighted                 │
-│  ├── Direct "Apply Now" link                 │
-│  └── Reasoning explanation                   │
-└──────────────────────────────────────────────┘
-```
-
-## Data Flow
+## System overview
 
 ```
-1. SCRAPING PHASE (Every 3 hours)
-   ┌─────────────────────────────────────────┐
-   │ Search Terms                            │
-   │ ├── "Machine Learning Engineer"         │
-   │ ├── "Software Engineer NYC"             │
-   │ └── "AI Engineer"                       │
-   └─────────────────────────────────────────┘
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Scrapers Execute                        │
-   │ ├── Indeed.com/jobs?q=...               │
-   │ ├── LinkedIn.com/jobs/search?...        │
-   │ └── ZipRecruiter.com/jobs-search?...    │
-   └─────────────────────────────────────────┘
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Raw Job Listings                        │
-   │ [50-100 jobs per search]                │
-   └─────────────────────────────────────────┘
+Scheduler (every 3h)
+        │
+        ▼
+  src/main.py  ──── Scrapers ──── LinkedIn / BuiltIn / Seek / YC
+        │
+        ├── Scoring engine  ──── Keyword + embedding + LLM gate
+        │
+        ├── Database (SQLite)
+        │
+        └── Alert system  ──── Email (immediate ≥78) / Digest (≥62)
 
-2. PROCESSING PHASE
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Deduplication Check                     │
-   │ ├── Query DB by URL                     │
-   │ └── Skip if already exists              │
-   └─────────────────────────────────────────┘
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Scoring Engine                          │
-   │ ├── Extract keywords from description   │
-   │ ├── Match against Harvey's profile      │
-   │ ├── Calculate weighted score            │
-   │ └── Generate reasoning                  │
-   └─────────────────────────────────────────┘
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Database Insert                         │
-   │ ├── Save job data                       │
-   │ ├── Save score & matches                │
-   │ └── Log search history                  │
-   └─────────────────────────────────────────┘
-
-3. ALERTING PHASE
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Query High-Match Jobs                   │
-   │ WHERE fit_score >= 70                   │
-   │   AND alerted_at IS NULL                │
-   └─────────────────────────────────────────┘
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Send Alerts                             │
-   │ ├── Format email with job details       │
-   │ ├── Send via SendGrid/SMTP              │
-   │ └── Mark as alerted in DB               │
-   └─────────────────────────────────────────┘
-                    ▼
-   ┌─────────────────────────────────────────┐
-   │ Harvey Receives Email                   │
-   │ "🎯 High-Match Job: ML Engineer..."     │
-   └─────────────────────────────────────────┘
+web_app.py (Flask dashboard)
+        │
+        ├── Job feed + score filters
+        ├── CV generator (on-demand, per job)
+        ├── Cover letter generator
+        ├── Application tracker
+        └── /setup  ──── Kimi document ingestion + profile builder
 ```
 
-## Deployment Architectures
+## Key components
 
-### Option 1: Local Cron
-```
-┌──────────────────────────────────┐
-│   macOS Machine                  │
-│                                  │
-│   ┌──────────────────────────┐   │
-│   │ Cron Job (*/3 * * * *)   │   │
-│   │   ▼                      │   │
-│   │ JobHunter Python Script  │   │
-│   │   ▼                      │   │
-│   │ SQLite Database          │   │
-│   │   ▼                      │   │
-│   │ SendGrid API             │───┼──> Email
-│   └──────────────────────────┘   │
-└──────────────────────────────────┘
-```
+### Scrapers — `src/scrapers/`
 
-### Option 2: AWS Lambda (Serverless)
-```
-┌──────────────────────────────────────────┐
-│   AWS Cloud                              │
-│                                          │
-│   ┌────────────────────┐                 │
-│   │ EventBridge        │                 │
-│   │ rate(3 hours)      │                 │
-│   └─────────┬──────────┘                 │
-│             ▼                            │
-│   ┌────────────────────┐                 │
-│   │ Lambda Function    │                 │
-│   │ (JobHunter code)   │                 │
-│   └─────────┬──────────┘                 │
-│             │                            │
-│             ├─────> DynamoDB (jobs)      │
-│             │                            │
-│             └─────> SES ─────────────────┼──> Email
-│                                          │
-└──────────────────────────────────────────┘
-```
+| File | Source | Method |
+|---|---|---|
+| `linkedin.py` | LinkedIn | HTTP + BeautifulSoup, paginated search |
+| `builtin.py` | BuiltIn | HTTP scrape |
+| `seek.py` | Seek (AU) | HTTP scrape |
+| `yc.py` | Y Combinator | HTTP scrape |
 
-### Option 3: Docker Container
-```
-┌──────────────────────────────────────────┐
-│   Cloud VM (AWS EC2 / Digital Ocean)    │
-│                                          │
-│   ┌────────────────────────────────┐     │
-│   │ Docker Container               │     │
-│   │                                │     │
-│   │  ┌──────────────────────────┐  │     │
-│   │  │ Python Scheduler         │  │     │
-│   │  │   (runs every 3 hours)   │  │     │
-│   │  └──────────┬───────────────┘  │     │
-│   │             ▼                  │     │
-│   │  ┌──────────────────────────┐  │     │
-│   │  │ JobHunter                │  │     │
-│   │  └──────────┬───────────────┘  │     │
-│   │             ▼                  │     │
-│   │  Volume: /data/jobhunter.db    │     │
-│   │  Volume: /logs/                │     │
-│   └────────────────────────────────┘     │
-│                │                         │
-│                └──> SendGrid API ────────┼──> Email
-└──────────────────────────────────────────┘
-```
+All scrapers extend `BaseScraper` which handles rate limiting (2–5 s delays), retry logic, user-agent rotation, and deduplication by URL.
 
-## Technology Stack
+### Scoring engine — `src/scoring/`
+
+Three-layer pipeline, runs per job:
+
+1. **Hard gates** (`engine.py`) — immediately discard if visa impossible, seniority mismatch, location infeasible
+2. **Hybrid scorer** (`engine.py`) — weighted sum of:
+   - Keyword overlap (skills, role titles, industries) — fast, no model
+   - Sentence-transformer embedding cosine similarity — meaning-level alignment
+3. **AI gate** (`ai_scorer.py`) — jobs scoring ≥62 get a Kimi `moonshot-v1-8k` call for reasoning, company research, and final confidence adjustment
+
+### Candidate profile — `src/profile.py`
+
+Loads `config/user_profile.json` if present (written by `/setup`), otherwise falls back to the hardcoded `HARVEY_PROFILE` constant. Profile contains: skills (core/strong/familiar), target roles, industries, visa status, location, salary floor, and search terms used by each scraper.
+
+### Alert system — `src/alerts/`
+
+- Immediate email for score ≥78
+- Daily digest for 62–77
+- Nothing sent below 62 (stored in DB only)
+
+### CV + cover letter generation — `src/applying/`
+
+On-demand from the dashboard. `cv_generator.py` parses the base resume PDF, then Kimi rewrites/tailors it to the specific job. `cover_letter_generator.py` follows the same pattern. Both write output to `applications/`.
+
+### Dashboard — `web_app.py`
+
+Flask app on port 5002. Key routes:
+
+| Route | Purpose |
+|---|---|
+| `/` | Job feed, filterable by score/source/status |
+| `/setup` | Onboarding — upload CVs, Kimi extracts profile |
+| `/api/generate_cv` | Trigger CV generation for a job |
+| `/api/rescore` | Re-run scorer on stored jobs |
+| `/api/mark_applied` | Log application |
+
+### Database — `src/database/`
+
+SQLite via SQLAlchemy. Two main tables:
+- **`jobs`** — all scraped listings with scores, reasoning, status
+- **`search_history`** — per-run stats (source, count, duration)
+
+## Data flow
 
 ```
-Backend:
-├── Python 3.11
-├── SQLAlchemy (ORM)
-├── SQLite (Database)
-├── BeautifulSoup4 (HTML parsing)
-├── Requests (HTTP client)
-├── Loguru (Logging)
-└── Schedule (Job scheduling)
-
-NLP/Matching:
-├── spaCy (Text processing)
-├── Regex (Pattern matching)
-└── Custom scoring algorithm
-
-Alerts:
-├── SendGrid (Email)
-├── SMTP (Gmail)
-└── Twilio (SMS)
-
-Deployment:
-├── Docker
-├── AWS Lambda
-└── Cron
+Scraper → raw JobListing
+       → dedup check (URL in DB?) → skip if seen
+       → HardGate → drop if fails
+       → HybridScore → 0-100
+       → if score ≥ 62 → AI gate → adjusted score + reasoning
+       → write to DB
+       → if score ≥ 78 → immediate email alert
+       → if score 62-77 → add to digest queue
 ```
 
-## Key Features
+## Configuration
 
-✅ **Multi-source monitoring**: Indeed, LinkedIn, ZipRecruiter
-✅ **Intelligent matching**: 0-100 scoring based on profile
-✅ **E-3 visa optimization**: Prioritizes sponsorship mentions
-✅ **Deduplication**: Prevents duplicate alerts
-✅ **Real-time alerts**: Immediate notification for high matches
-✅ **Daily digest**: Moderate matches in one email
-✅ **Historical tracking**: All jobs stored in database
-✅ **Extensible**: Easy to add new job boards
-✅ **Configurable**: YAML-based settings
-✅ **Production-ready**: Error handling, logging, retries
+All runtime config lives in `config/` (gitignored):
+- `user_profile.json` — candidate profile (written by `/setup`)
+- `locations.json` — scraping location list
+- `auto_submit.json` — auto-apply settings
 
-## Performance Characteristics
-
-- **Scraping**: ~30-60 seconds per source
-- **Processing**: ~50-100 jobs/minute
-- **Total cycle**: 3-5 minutes
-- **Database size**: ~1MB per 1000 jobs
-- **Memory usage**: ~100-200MB
-- **Network**: ~10-20 API calls per run
-
-## Security & Privacy
-
-- ✅ No credentials in code (uses .env)
-- ✅ Local database (SQLite)
-- ✅ No third-party analytics
-- ✅ Respects ToS (public search only)
-- ✅ Rate limiting to avoid blocks
-- ✅ User agent rotation
+Environment variables (`.env`):
+- `KIMI_API_KEY` — required for scoring, CV/letter generation, setup
+- `GMAIL_USER` / `GMAIL_APP_PASSWORD` — optional, for email alerts
