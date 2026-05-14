@@ -12,7 +12,7 @@ from loguru import logger
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from profile import HARVEY_PROFILE
+from profile import HARVEY_PROFILE  # type: ignore[import-untyped]
 
 # SCORE_DEBUG=true → logs every component score at DEBUG level per job
 SCORE_DEBUG = os.getenv("SCORE_DEBUG", "").lower() in ("1", "true", "yes")

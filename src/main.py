@@ -3,6 +3,7 @@ Main orchestration - brings everything together
 """
 import os
 import sys
+import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from loguru import logger
@@ -28,7 +29,10 @@ def _is_english(text: str) -> bool:
     if not _LANGDETECT_AVAILABLE or not text or len(text.strip()) < 20:
         return True
     try:
-        return _detect_lang(text[:300]) == 'en'
+        if _LANGDETECT_AVAILABLE:
+            from langdetect import detect as _dl
+            return _dl(text[:300]) == 'en'
+        return True
     except Exception:
         return True  # fail open — don't drop a job due to detection error
 
@@ -153,195 +157,78 @@ class JobHunter:
         logger.info("JobHunter initialized")
     
     def _default_config(self) -> Dict[str, Any]:
-        """Default configuration optimized for Harvey's profile"""
+        """Configuration driven by the user profile (config/user_profile.json if present)."""
         return {
             'thresholds': {
-                'immediate': 78,   # Top matches — email immediately (~top 2-3%)
-                'digest': 62,      # Solid matches — daily digest (~top 10%)
-                'store_only': 40,  # Floor: drop anything scored below this
+                'immediate': 78,
+                'digest': 62,
+                'store_only': 40,
             },
             'auto_apply': {
-                'enabled': True,  # Enable CV generation for high-scoring jobs
-                # Tiered approach for different customization levels
-                'tier_1_score': 60.0,  # High priority - heavy customization
-                'tier_2_score': 45.0,  # Medium priority - moderate customization
-                'tier_3_score': 40.0,  # Cast net - lighter customization
-                'max_per_run': 50      # Don't overwhelm with too many applications
+                'enabled': False,  # CVs are generated on-demand only (via dashboard button)
+                'tier_1_score': 60.0,
+                'tier_2_score': 45.0,
+                'tier_3_score': 40.0,
+                'max_per_run': 50
             },
-            'search_terms': {
-                'linkedin': [
-                    # ── AU / Sydney (tier 1) ──────────────────────────────
-                    'Machine Learning Engineer Sydney',
-                    'Software Engineer Sydney',
-                    'Backend Engineer Sydney',
-                    'AI Engineer Sydney',
-                    'Full Stack Engineer Sydney',
-                    'Python Engineer Sydney',
-                    'ML Engineer Sydney',
-                    'Data Engineer Sydney',
-                    'Software Engineer Melbourne',
-                    'Machine Learning Engineer Melbourne',
-                    'Backend Engineer Brisbane',
-
-                    # ── EU (tier 1 — AU-EU free trade deal 2026) ──────────
-                    'Machine Learning Engineer London',
-                    'ML Engineer London',
-                    'Software Engineer London',
-                    'Backend Engineer London',
-                    'AI Engineer London',
-                    'Software Engineer Amsterdam',
-                    'Backend Engineer Berlin',
-                    'Python Engineer Dublin',
-                    'ML Engineer Berlin',
-                    'AI Engineer Europe',
-                    'Software Engineer Lisbon',
-                    'Machine Learning Engineer Dublin',
-                    'Software Engineer Stockholm',
-                    'Backend Engineer Copenhagen',
-                    'Python Engineer Zurich',
-                    'ML Engineer Amsterdam',
-
-                    # ── Remote / Freelance / Digital Nomad (tier 1 global) ─
-                    'Remote Machine Learning Engineer',
-                    'Remote Software Engineer Python',
-                    'Remote AI Engineer',
-                    'Remote Backend Engineer',
-                    'Remote Data Engineer',
-                    'Remote Full Stack Engineer',
-                    'Freelance Machine Learning Engineer',
-                    'Freelance Software Engineer',
-                    'Freelance Backend Developer',
-                    'Freelance Python Developer',
-                    'Contract Machine Learning Engineer',
-                    'Contract Software Engineer',
-                    'Contract Python Engineer',
-                    'Digital Nomad Software Engineer',
-                    'Remote First Machine Learning',
-                    'Async Remote Engineer',
-
-                    # ── Middle East / MENA (tier 2) ───────────────────────
-                    'Software Engineer Dubai',
-                    'Machine Learning Engineer Dubai',
-                    'Backend Engineer Dubai',
-                    'Python Engineer Dubai',
-                    'AI Engineer Dubai',
-                    'Software Engineer Abu Dhabi',
-                    'Machine Learning Engineer Tel Aviv',
-                    'Software Engineer Tel Aviv',
-                    'Backend Engineer Tel Aviv',
-                    'AI Engineer Middle East',
-
-                    # ── Latin America / LATAM (tier 2) ────────────────────
-                    'Software Engineer Mexico City',
-                    'Machine Learning Engineer Remote LATAM',
-                    'Backend Engineer Medellin',
-                    'Python Developer Buenos Aires',
-                    'Remote Software Engineer Latin America',
-                    'Software Engineer Colombia',
-                    'ML Engineer Remote South America',
-
-                    # ── Global ML/AI (no location — global feed) ──────────
-                    'Machine Learning Engineer',
-                    'ML Engineer',
-                    'AI Engineer',
-                    'Applied Scientist',
-                    'Research Engineer',
-                    'AI Product Engineer',
-                    'MLOps Engineer',
-                    'ML Infrastructure Engineer',
-                    'Computer Vision Engineer',
-
-                    # ── Backend (Python) global ───────────────────────────
-                    'Backend Engineer Python',
-                    'Python Software Engineer',
-                    'Software Engineer Python',
-                    'API Engineer',
-
-                    # ── Data / Full-stack global ──────────────────────────
-                    'Data Engineer Python',
-                    'Analytics Engineer',
-                    'Full Stack Python',
-                    'Full Stack Machine Learning',
-
-                    # ── Domain-specific global ───────────────────────────
-                    'Geospatial Software Engineer',
-                    'Geospatial ML Engineer',
-                    'Climate Tech Engineer',
-                    'Carbon Tech Engineer',
-                    'Environmental Data Engineer',
-                    'GIS Software Engineer',
-
-                    # ── US remote/freelance only (tier 3 for on-site US) ──
-                    'Remote Machine Learning Engineer United States',
-                    'Remote Software Engineer San Francisco',
-                    'Freelance AI Engineer USA',
-                    'Contract Python Engineer New York',
-                    'Remote Backend Engineer Seattle',
-                ],
-                'builtin': [
-                    # ML/AI
-                    'machine learning',
-                    'ai engineer',
-                    'ml engineer',
-                    'applied scientist',
-
-                    # Backend
-                    'software engineer',
-                    'backend engineer',
-                    'python engineer',
-                    'python developer',
-                    'backend developer',
-
-                    # Data
-                    'analytics engineer',
-                    'data engineer',
-                    'data platform',
-
-                    # Full-stack
-                    'full stack engineer',
-                    'fullstack engineer',
-
-                    # Remote / Freelance (BuiltIn has remote filter)
-                    'remote engineer',
-                    'remote machine learning',
-                ],
-                'seek': [
-                    # Seek (Australia) — Sydney-first
-                    'Machine Learning Engineer',
-                    'ML Engineer',
-                    'AI Engineer',
-                    'Data Scientist',
-                    'Applied Scientist',
-                    'MLOps Engineer',
-                    'Software Engineer Python',
-                    'Backend Engineer',
-                    'Python Developer',
-                    'Backend Developer',
-                    'Software Engineer',
-                    'Data Engineer',
-                    'Analytics Engineer',
-                    'Full Stack Engineer',
-                    'Full Stack Developer',
-                    'Platform Engineer',
-                    'Cloud Engineer',
-                    'DevOps Engineer',
-                ]
-            },
-            'locations': load_scraping_locations(),  # Load from config file
+            'search_terms': self._build_search_terms(),
+            'locations': load_scraping_locations(),
             'exclude_keywords': [
-                'unpaid',
-                'volunteer',
-                'contractor only',
-                'contract only',
-                'no benefits',
-                'commission only',
-                'equity only',
-                'intern',
-                'internship'
+                'unpaid', 'volunteer', 'contractor only', 'contract only',
+                'no benefits', 'commission only', 'equity only', 'intern', 'internship'
             ],
             'max_jobs_per_source': 50
         }
-    
+
+    def _build_search_terms(self) -> Dict[str, List[str]]:
+        """
+        Build scraper search-term lists from the user profile.
+        Falls back to sensible generic terms if no profile is saved yet.
+        The profile stores a 'search_terms' key written by the setup wizard,
+        which is a list of strings like ['Backend Engineer Python', 'ML Engineer', ...].
+        We expand those with location variants for LinkedIn/Seek.
+        """
+        # Try to load search terms saved by the setup wizard
+        profile_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'config', 'user_profile.json'
+        )
+        raw_terms: List[str] = []
+        if os.path.exists(profile_path):
+            try:
+                with open(profile_path, encoding='utf-8') as fh:
+                    prof = json.load(fh)
+                raw_terms = prof.get('search_terms') or prof.get('roles') or []
+            except Exception:
+                pass
+
+        if not raw_terms:
+            # Generic fallback so the scraper still runs for new users
+            raw_terms = ['Software Engineer', 'Backend Engineer', 'Machine Learning Engineer']
+
+        locations = load_scraping_locations()
+
+        # ── LinkedIn: base terms + location variants ──────────────────────────
+        linkedin_terms: List[str] = list(raw_terms)  # pure keyword passes first
+        for loc in locations[:6]:  # cap to avoid too many searches
+            for term in raw_terms[:5]:  # top 5 terms × top 6 locations
+                linkedin_terms.append(f'{term} {loc}')
+        # Remote variants
+        for term in raw_terms[:5]:
+            linkedin_terms.append(f'Remote {term}')
+
+        # ── BuiltIn: lowercase, short keywords ────────────────────────────────
+        builtin_terms = [t.lower() for t in raw_terms]
+
+        # ── Seek: direct terms (Seek handles location separately) ─────────────
+        seek_terms = list(raw_terms)
+
+        return {
+            'linkedin': linkedin_terms,
+            'builtin': builtin_terms,
+            'seek': seek_terms,
+        }
+
     def run(self) -> Dict[str, Any]:
         """
         Main execution flow:

@@ -2,7 +2,7 @@
 LinkedIn Jobs scraper - Enhanced with Selenium for full job descriptions
 Uses multiple strategies to find jobs matching Harvey's profile
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
 from loguru import logger
 from .base import BaseScraper, JobListing
@@ -514,7 +514,7 @@ class LinkedInScraper(BaseScraper):
         logger.info(f"Total: Parsed {len(all_jobs)} valid jobs for '{term}' across all pages")
         return all_jobs
     
-    def _parse_job_card(self, card) -> JobListing:
+    def _parse_job_card(self, card) -> Optional[JobListing]:
         """Parse a job card from search results with better extraction"""
         try:
             # Try multiple approaches to find title and link
@@ -653,7 +653,7 @@ class LinkedInScraper(BaseScraper):
             # Fallback: look for div with id containing 'job' and 'detail'
             if not desc_elem or len(desc_elem.get_text(strip=True)) < 100:
                 for div in soup.find_all('div', id=True):
-                    div_id = div.get('id', '').lower()
+                    div_id = str(div.get('id', '') or '').lower()
                     if 'job' in div_id and ('detail' in div_id or 'description' in div_id):
                         if len(div.get_text(strip=True)) > 100:
                             desc_elem = div
@@ -704,7 +704,7 @@ class LinkedInRSSReader:
     This is more reliable than scraping
     """
     
-    def __init__(self, rss_url: str = None):
+    def __init__(self, rss_url: Optional[str] = None):
         self.rss_url = rss_url
     
     def fetch_jobs(self) -> List[Dict[str, Any]]:

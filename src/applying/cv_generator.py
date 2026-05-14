@@ -10,7 +10,7 @@ Generates tailored CVs/resumes for specific job applications by:
 import os
 import re
 import sys
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 from loguru import logger
 
@@ -22,10 +22,18 @@ try:
 except ImportError:
     HARVEY_PROFILE = {}  # type: ignore[assignment]
 
-# Pre-declare optional imports so names are always bound (Pylance)
-PdfReader = None  # type: ignore[assignment]
-letter = SimpleDocTemplate = getSampleStyleSheet = ParagraphStyle = None  # type: ignore[assignment]
-inch = Paragraph = Spacer = ListFlowable = ListItem = None  # type: ignore[assignment]
+# Pre-declare optional imports so names are always bound.
+# Typed as Any so Pylance doesn't treat them as None and flag every call site.
+PdfReader: Any = None
+SimpleDocTemplate: Any = None
+getSampleStyleSheet: Any = None
+ParagraphStyle: Any = None
+Paragraph: Any = None
+Spacer: Any = None
+ListFlowable: Any = None
+ListItem: Any = None
+# letter and inch are Final constants in reportlab stubs — not pre-declared here;
+# all usage is inside REPORTLAB_AVAILABLE guards so this is safe at runtime.
 TA_LEFT: int = 0
 TA_CENTER: int = 1
 PDF_AVAILABLE = False
@@ -48,6 +56,9 @@ try:
     REPORTLAB_AVAILABLE = True
 except ImportError:
     logger.warning("reportlab not available - install with: pip install reportlab")
+    # Provide dummy values so Pylance knows these names are always bound.
+    letter = (612.0, 792.0)  # type: ignore[assignment]  # US Letter in points
+    inch = 72.0               # type: ignore[assignment]  # 1 inch = 72 points
 
 
 class CVGenerator:

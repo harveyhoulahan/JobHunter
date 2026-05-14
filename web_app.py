@@ -56,7 +56,7 @@ def index():
         good_matches = []
         
         for j in all_jobs:
-            score = float(j.fit_score) if j.fit_score is not None else 0.0
+            score = float(j.fit_score) if j.fit_score is not None else 0.0  # type: ignore[arg-type]
             if score >= 70:
                 top_matches.append(j)
             elif score >= 60:
@@ -130,11 +130,13 @@ def mark_applied():
 @app.route('/api/update_status', methods=['POST'])
 def update_status():
     """Update job status"""
-    data = request.json
-    job_id = data.get('job_id')
-    status = data.get('status')
-    notes = data.get('notes', '')
-    
+    data = request.json or {}
+    job_id: int = int(data.get('job_id') or 0)
+    status: str = str(data.get('status') or '')
+    notes: str = str(data.get('notes') or '')
+
+    if not job_id or not status:
+        return jsonify({'success': False, 'error': 'job_id and status required'}), 400
     try:
         db.update_job_status(job_id, status, notes)
         return jsonify({'success': True, 'message': f'Updated to {status}'})
@@ -145,11 +147,13 @@ def update_status():
 @app.route('/api/add_interview', methods=['POST'])
 def add_interview():
     """Add interview round"""
-    data = request.json
-    job_id = data.get('job_id')
-    interview_type = data.get('interview_type')
-    notes = data.get('notes', '')
-    
+    data = request.json or {}
+    job_id: int = int(data.get('job_id') or 0)
+    interview_type: str = str(data.get('interview_type') or '')
+    notes: str = str(data.get('notes') or '')
+
+    if not job_id or not interview_type:
+        return jsonify({'success': False, 'error': 'job_id and interview_type required'}), 400
     try:
         db.add_interview_round(job_id, interview_type, notes=notes)
         return jsonify({'success': True, 'message': 'Interview added'})
@@ -278,45 +282,71 @@ def setup():
 
 @app.route('/api/setup/ingest_cv', methods=['POST'])
 def setup_ingest_cv():
-    """Parse uploaded CV PDF and extract a structured profile via Kimi."""
+    """
+    Accept up to 3 PDF documents (CV + optional extras), extract all text,
+    then ask Kimi to build a complete profile INCLUDING search_terms.
+    """
     import tempfile
-    try:
-        f = request.files.get('cv')
-        if not f or not f.filename.lower().endswith('.pdf'):
-            return jsonify({'success': False, 'error': 'Please upload a PDF file'}), 400
+    import json as _json
 
-        # Save to temp file and parse
+    files = request.files.getlist('docs')
+    if not files or all(f.filename == '' for f in files):
+        # Fallback: support legacy single-file field name
+        single = request.files.get('cv')
+        if single:
+            files = [single]
+        else:
+            return jsonify({'success': False, 'error': 'Please upload at least one document'}), 400
+
+    # ── Extract text from every PDF ───────────────────────────────────────────
+    all_texts: list[str] = []
+    for f in files[:3]:
+        if not f or not f.filename:
+            continue
+        fname = f.filename.lower()
+        if not fname.endswith('.pdf'):
+            return jsonify({'success': False, 'error': f'"{f.filename}" is not a PDF. Please upload PDF files only.'}), 400
+
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
             f.save(tmp.name)
             tmp_path = tmp.name
 
-        # Extract raw text from PDF
-        cv_text = ''
+        doc_text = ''
         try:
             import pdfplumber
             with pdfplumber.open(tmp_path) as pdf:
-                cv_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+                doc_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
         except Exception:
             try:
                 import pypdf
                 reader = pypdf.PdfReader(tmp_path)
-                cv_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+                doc_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
             except Exception as e:
-                return jsonify({'success': False, 'error': f'Could not parse PDF: {e}'}), 400
+                return jsonify({'success': False, 'error': f'Could not parse "{f.filename}": {e}'}), 400
         finally:
             import os as _os; _os.unlink(tmp_path)
 
-        if len(cv_text.strip()) < 100:
-            return jsonify({'success': False, 'error': 'Could not extract enough text from PDF. Try a text-based PDF.'}), 400
+        if doc_text.strip():
+            all_texts.append(f'=== Document: {f.filename} ===\n{doc_text}')
 
-        # Call Kimi to extract structured profile
-        from src.scoring.ai_scorer import _kimi_client, KIMI_AVAILABLE
-        if not KIMI_AVAILABLE or not _kimi_client:
-            return jsonify({'success': False, 'error': 'Kimi AI not configured (check KIMI_API_KEY)'}), 503
+    if not all_texts:
+        return jsonify({'success': False, 'error': 'Could not extract text from any uploaded file. Use text-based PDFs.'}), 400
 
-        system_prompt = """You are a CV parser. Extract structured information from the CV text below and return ONLY a valid JSON object — no markdown, no explanation.
+    combined_text = '\n\n'.join(all_texts)
+    if len(combined_text.strip()) < 100:
+        return jsonify({'success': False, 'error': 'Extracted text is too short. Try different PDFs.'}), 400
 
-The JSON must have these keys:
+    # ── Call Kimi ─────────────────────────────────────────────────────────────
+    from src.scoring.ai_scorer import _kimi_client, KIMI_AVAILABLE
+    if not KIMI_AVAILABLE or not _kimi_client:
+        return jsonify({'success': False, 'error': 'Kimi AI not configured (check KIMI_API_KEY)'}), 503
+
+    system_prompt = """You are an expert career profiler. You will receive text extracted from one or more professional documents (CV, portfolio statement, cover letter, LinkedIn export, etc.).
+
+Your job is to read everything carefully and return ONLY a single valid JSON object — no markdown, no explanation, no code fences.
+
+The JSON must contain these exact keys:
+
 {
   "name": "Full Name",
   "email": "email@example.com",
@@ -324,11 +354,11 @@ The JSON must have these keys:
   "linkedin": "https://linkedin.com/in/...",
   "portfolio": "https://...",
   "location": "City, Country",
-  "summary": "2-3 sentence professional summary derived from the CV",
+  "summary": "2–3 sentence professional summary that captures what makes this person unique",
   "skills": {
-    "core": ["skill1", "skill2", ...],
-    "strong": ["skill3", "skill4", ...],
-    "familiar": []
+    "core": ["skill1", "skill2"],
+    "strong": ["skill3", "skill4"],
+    "familiar": ["skill5"]
   },
   "roles": ["Target Role 1", "Target Role 2"],
   "industries": ["Industry 1", "Industry 2"],
@@ -336,7 +366,7 @@ The JSON must have these keys:
     {
       "title": "Job Title",
       "company": "Company Name",
-      "period": "2023 – present",
+      "period": "Jan 2022 – present",
       "location": "City, Country",
       "bullets": ["Achievement 1", "Achievement 2", "Achievement 3"]
     }
@@ -347,20 +377,31 @@ The JSON must have these keys:
     "graduation": "2023",
     "gpa": ""
   },
-  "visa_notes": "Citizen / PR / requires sponsorship",
-  "min_salary": 0
+  "visa_notes": "e.g. Australian Citizen / Requires sponsorship in US",
+  "min_salary": 0,
+  "search_terms": ["Term 1", "Term 2", "Term 3", "Term 4", "Term 5", "Term 6", "Term 7", "Term 8"]
 }
 
-Infer roles and industries from the experience and skills. Keep bullets specific and technical. Return ONLY the JSON."""
+For "search_terms": generate 6–12 job-search query strings that best represent what this person should search for. Think like a recruiter. Examples:
+- A Python backend engineer → ["Backend Engineer Python", "Software Engineer Python", "API Engineer", "Platform Engineer", "Remote Backend Engineer"]
+- A marine biologist → ["Marine Biologist", "Ocean Researcher", "Environmental Scientist", "Marine Ecologist"]
+- A graphic designer → ["Graphic Designer", "Visual Designer", "Brand Designer", "UX Designer", "Art Director"]
+Make them specific enough to get good results, not so narrow they miss opportunities.
 
+Use the person's actual skills, job titles, and stated career interests — not generic placeholders.
+
+Return ONLY the JSON object."""
+
+    raw = ''
+    try:
         response = _kimi_client.chat.completions.create(
             model='moonshot-v1-32k',
             messages=[
                 {'role': 'system', 'content': system_prompt},
-                {'role': 'user',   'content': f'CV TEXT:\n\n{cv_text[:12000]}'},
+                {'role': 'user',   'content': f'DOCUMENTS:\n\n{combined_text[:20000]}'},
             ],
             temperature=0.1,
-            max_tokens=2500,
+            max_tokens=3000,
         )
         raw = (response.choices[0].message.content or '').strip()
 
@@ -370,10 +411,12 @@ Infer roles and industries from the experience and skills. Keep bullets specific
         if raw.endswith('```'):
             raw = raw[:raw.rfind('```')]
 
-        import json as _json
         profile = _json.loads(raw.strip())
         return jsonify({'success': True, 'profile': profile})
 
+    except _json.JSONDecodeError as e:
+        logger.error(f'Kimi returned non-JSON: {raw[:500] if "raw" in dir() else "(no response)"}')  # type: ignore[possibly-unbound]
+        return jsonify({'success': False, 'error': f'Kimi returned invalid JSON: {e}'}), 500
     except Exception as e:
         logger.error(f'setup_ingest_cv error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -706,7 +749,7 @@ def get_recent_jobs():
                 'title': j.title,
                 'company': j.company,
                 'fit_score': j.fit_score,
-                'created_at': j.created_at.isoformat() if j.created_at else None
+                'created_at': j.created_at.isoformat() if j.created_at is not None else None
             } for j in jobs]
         })
     except Exception as e:
@@ -784,7 +827,7 @@ def generate_cv_for_job(job_id):
                 'source_id':   job.source_id or '',
             }
             score_result = {
-                'fit_score':    float(job.fit_score or 0),
+                'fit_score':    float(job.fit_score) if job.fit_score is not None else 0.0,  # type: ignore[arg-type]
                 'visa_status':  job.visa_status or 'none',
                 'seniority_ok': True,
                 'location_ok':  True,
