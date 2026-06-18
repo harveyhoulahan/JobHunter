@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>Job Details - JobHunter</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=4.1">
 </head>
 <body>
     <div class="page">
@@ -101,7 +101,7 @@
             {% if job.reasoning %}
             <div style="margin-top: 14px;">
                 <div class="detail-label">AI reasoning</div>
-                <div class="description-box">{{ job.reasoning }}</div>
+                <div class="description-box">{{ job.reasoning | md_inline }}</div>
             </div>
             {% endif %}
 

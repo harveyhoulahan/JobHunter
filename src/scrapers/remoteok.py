@@ -114,6 +114,7 @@ class RemoteOKScraper(BaseScraper):
                 "salary": salary,
                 "source": self.SOURCE,
                 "source_id": source_id,
+                "posted_date": str(entry.get("date") or ""),  # ISO 8601 from API
                 "scraped_at": datetime.utcnow().isoformat(),
             }
         except Exception as exc:

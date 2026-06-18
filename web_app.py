@@ -19,6 +19,23 @@ scrape_running = False
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), 'config')
 
 
+@app.template_filter('md_inline')
+def md_inline(text):
+    """
+    Render the tiny subset of markdown the AI reasoning uses (**bold**, *italic*)
+    as safe HTML. Everything is HTML-escaped first, so user/AI text can never
+    inject markup — only our own <strong>/<em> tags are added afterwards.
+    """
+    import re
+    from markupsafe import Markup, escape
+    if not text:
+        return ''
+    safe = str(escape(text))
+    safe = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', safe)
+    safe = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', safe)
+    return Markup(safe)
+
+
 def _read_json_file(path: str, default_value):
     """Read JSON file safely with fallback."""
     try:

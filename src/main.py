@@ -3,6 +3,7 @@ Main orchestration - brings everything together
 """
 import os
 import sys
+import re
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -35,6 +36,58 @@ def _is_english(text: str) -> bool:
         return True
     except Exception:
         return True  # fail open — don't drop a job due to detection error
+
+
+def _estimate_posted_age_days(text: str) -> "float | None":
+    """
+    Best-effort age (in days) of a job posting from its free-text `posted_date`.
+
+    Scrapers return wildly different formats: ISO dates ("2026-06-15"), relative
+    phrases ("2 days ago", "3 weeks ago", "yesterday"), vague labels ("Recently",
+    "Just posted"), and "30+ days ago". Returns the estimated age in days, or
+    None when the text gives no usable signal (caller should then KEEP the job —
+    fail-open, never drop a job just because its date is unparseable).
+    """
+    if not text:
+        return None
+    t = str(text).strip().lower()
+    if not t:
+        return None
+
+    # Vague-but-fresh labels → treat as brand new
+    if any(k in t for k in ('just posted', 'just now', 'today', 'recently',
+                            'new', 'moments ago', 'hours ago', 'hour ago',
+                            'minute ago', 'minutes ago')):
+        return 0.0
+    if 'yesterday' in t:
+        return 1.0
+
+    # Relative phrases: "2 days ago", "3 weeks ago", "1 month ago", "30+ days ago"
+    m = re.search(r'(\d+)\s*\+?\s*(day|week|month|year|hour|minute)s?', t)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        mult = {'minute': 1 / 1440, 'hour': 1 / 24, 'day': 1,
+                'week': 7, 'month': 30, 'year': 365}[unit]
+        return n * mult
+
+    # ISO / common date formats
+    iso = t.replace('z', '').strip()
+    for fmt in (None, '%Y-%m-%d', '%Y/%m/%d', '%d %b %Y', '%d %B %Y', '%b %d, %Y', '%B %d, %Y'):
+        try:
+            if fmt is None:
+                dt = datetime.fromisoformat(iso[:19]) if 'T' in iso or '-' in iso else None
+                if dt is None:
+                    continue
+            else:
+                dt = datetime.strptime(t, fmt)
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            return max(0.0, (datetime.utcnow() - dt).total_seconds() / 86400.0)
+        except (ValueError, TypeError):
+            continue
+
+    return None
 
 
 from src.database.models import Database
@@ -182,11 +235,15 @@ class JobHunter:
 
     def _build_search_terms(self) -> Dict[str, List[str]]:
         """
-        Build scraper search-term lists from the user profile.
-        Falls back to sensible generic terms if no profile is saved yet.
-        The profile stores a 'search_terms' key written by the setup wizard,
-        which is a list of strings like ['Backend Engineer Python', 'ML Engineer', ...].
-        We expand those with location variants for LinkedIn/Seek.
+        Build CLEAN, role-only search-term lists from the user profile.
+
+        Location is ALWAYS passed to scrapers as a separate parameter, so terms
+        here must be pure role keywords. We deliberately do NOT append location
+        strings (the old code produced junk like "Software Engineer (US)" and
+        "Backend Engineer Anywhere", which LinkedIn returns zero results for).
+
+        Terms are ML/AI-first to match the candidate's target focus, then general
+        software roles. Falls back to generic terms if no profile is saved yet.
         """
         # Try to load search terms saved by the setup wizard
         profile_path = os.path.join(
@@ -203,30 +260,37 @@ class JobHunter:
                 pass
 
         if not raw_terms:
-            # Generic fallback so the scraper still runs for new users
-            raw_terms = ['Software Engineer', 'Backend Engineer', 'Machine Learning Engineer']
+            # ML/AI-first defaults for a junior ML engineer; general SWE as a net.
+            raw_terms = HARVEY_PROFILE.get('roles', []) or [
+                'Machine Learning Engineer', 'ML Engineer', 'AI Engineer',
+                'Data Engineer', 'MLOps Engineer', 'Python Developer',
+                'Software Engineer', 'Backend Engineer', 'Full Stack Engineer',
+            ]
 
-        locations = load_scraping_locations()
+        # Strip any accidental location fragments and dedupe, preserving order.
+        seen: set = set()
+        clean_terms: List[str] = []
+        for t in raw_terms:
+            t = re.sub(r'\s*\([^)]*\)\s*', ' ', t).strip()  # drop "(US)", "(Global)"
+            t = re.sub(r'\s+', ' ', t)
+            key = t.lower()
+            if t and key not in seen:
+                seen.add(key)
+                clean_terms.append(t)
 
-        # ── LinkedIn: base terms + location variants ──────────────────────────
-        linkedin_terms: List[str] = list(raw_terms)  # pure keyword passes first
-        for loc in locations[:6]:  # cap to avoid too many searches
-            for term in raw_terms[:5]:  # top 5 terms × top 6 locations
-                linkedin_terms.append(f'{term} {loc}')
-        # Remote variants
-        for term in raw_terms[:5]:
-            linkedin_terms.append(f'Remote {term}')
-
-        # ── BuiltIn: lowercase, short keywords ────────────────────────────────
-        builtin_terms = [t.lower() for t in raw_terms]
-
-        # ── Seek: direct terms (Seek handles location separately) ─────────────
-        seek_terms = list(raw_terms)
+        # ML/AI roles bubble to the front so they're searched first under the
+        # per-location term cap (LINKEDIN_TERMS_PER_LOCATION).
+        ml_tokens = ('machine learning', 'ml ', ' ml', 'ai ', ' ai', 'mlops',
+                     'data engineer', 'data scientist', 'research engineer', 'nlp')
+        ml_first = sorted(
+            clean_terms,
+            key=lambda t: 0 if any(tok in f' {t.lower()} ' for tok in ml_tokens) else 1
+        )
 
         return {
-            'linkedin': linkedin_terms,
-            'builtin': builtin_terms,
-            'seek': seek_terms,
+            'linkedin': ml_first,
+            'builtin': [t.lower() for t in ml_first],
+            'seek': ml_first,
         }
 
     def run(self) -> Dict[str, Any]:
@@ -256,22 +320,22 @@ class JobHunter:
             
             # 2. Filter out duplicates BEFORE fetching descriptions (saves time!)
             logger.info("Filtering duplicates before fetching descriptions...")
-            from datetime import timedelta
-            _MAX_JOB_AGE_DAYS = 30  # Ignore jobs posted more than 30 days ago
-            _stale_cutoff = datetime.utcnow() - timedelta(days=_MAX_JOB_AGE_DAYS)
+            # Recency: drop anything older than MAX_JOB_AGE_DAYS (configurable).
+            # Default 14 days — for an active job hunt, fresh postings convert best.
+            # Uses a robust relative-date parser; jobs with an UNKNOWN date are KEPT
+            # (fail-open) so we never lose a good role to a missing/odd date string.
+            _MAX_JOB_AGE_DAYS = float(os.getenv("MAX_JOB_AGE_DAYS", "14"))
+            _stale_dropped = 0
             new_job_candidates = []
             for job_data in all_jobs:
-                # Staleness check — skip jobs with an explicit posted_date older than 30 days
+                # Staleness check via robust parser (handles "2 weeks ago", ISO, etc.)
                 posted_raw = job_data.get('posted_date') or job_data.get('date') or ''
-                if posted_raw:
-                    try:
-                        posted_dt = datetime.fromisoformat(str(posted_raw).replace('Z', ''))
-                        if posted_dt < _stale_cutoff:
-                            logger.debug(f"Skipping stale job (posted {posted_raw}): {job_data.get('title')}")
-                            stats['jobs_duplicate'] += 1
-                            continue
-                    except Exception:
-                        pass  # If we can't parse the date, keep the job
+                age_days = _estimate_posted_age_days(posted_raw)
+                if age_days is not None and age_days > _MAX_JOB_AGE_DAYS:
+                    logger.debug(f"Skipping stale job (~{age_days:.0f}d, '{posted_raw}'): {job_data.get('title')}")
+                    stats['jobs_duplicate'] += 1
+                    _stale_dropped += 1
+                    continue
 
                 source_id = job_data.get('source_id')
                 url = job_data.get('url')
@@ -308,7 +372,9 @@ class JobHunter:
                 # This is a new job - keep it for processing
                 new_job_candidates.append(job_data)
             
-            logger.info(f"✓ After deduplication: {len(new_job_candidates)} NEW jobs to process, {stats['jobs_duplicate']} duplicates skipped")
+            logger.info(f"✓ After deduplication: {len(new_job_candidates)} NEW jobs to process, "
+                        f"{stats['jobs_duplicate']} duplicates/stale skipped "
+                        f"({_stale_dropped} dropped as older than {_MAX_JOB_AGE_DAYS:.0f} days)")
 
             # 2b. Hard title-exclude: drop clearly irrelevant roles before
             #     fetching descriptions (saves HTTP requests)
@@ -328,65 +394,99 @@ class JobHunter:
                 if dropped:
                     logger.info(f"Hard title-exclude dropped {dropped} jobs before description fetch")
             
-            # 3. Fetch descriptions ONLY for new jobs (huge time saver!)
-            logger.info("Fetching descriptions for new jobs only...")
-            jobs_with_descriptions = []
-            
-            for i, job_data in enumerate(new_job_candidates, 1):
-                source = job_data.get('source')
+            # 2c. CHEAP TITLE PRE-FILTER (title + company only — no HTTP, no AI).
+            #     Drops obviously-irrelevant roles BEFORE the expensive description
+            #     fetch and AI scoring. This is the single biggest speed win:
+            #     previously every candidate got a full description fetch (~3s on
+            #     LinkedIn) and a Kimi call even when the title was clearly off-target.
+            prefilter_floor = float(os.getenv("TITLE_PREFILTER_FLOOR", "0.15"))
+            before = len(new_job_candidates)
+            kept = []
+            for jd in new_job_candidates:
+                if self.scorer.score_title_only(jd) >= prefilter_floor:
+                    kept.append(jd)
+                else:
+                    logger.debug(f"Title pre-filter dropped: {jd.get('title')} @ {jd.get('company')}")
+            new_job_candidates = kept
+            prefiltered = before - len(new_job_candidates)
+            if prefiltered:
+                logger.info(f"Title pre-filter dropped {prefiltered} low-relevance jobs "
+                            f"before fetch/score ({len(new_job_candidates)} remain)")
+
+            # 3. Fetch descriptions for the survivors — IN PARALLEL (was sequential,
+            #    the main cause of multi-hour runs). Only jobs missing a substantial
+            #    description and whose source supports single-job fetch are fetched.
+            max_fetch_workers = int(os.getenv("FETCH_WORKERS", "8"))
+            _scraper_for = {
+                'linkedin': 'linkedin', 'builtin_nyc': 'builtin', 'yc_jobs': 'yc_jobs',
+            }
+
+            def _fetch_one(job_data: Dict[str, Any]) -> Dict[str, Any]:
+                if len(job_data.get('description') or '') >= 200:
+                    return job_data  # already have a usable description
+                scraper = self.scrapers.get(_scraper_for.get(job_data.get('source') or '', ''))
                 url = job_data.get('url')
-                
-                # Get the appropriate scraper
-                scraper = None
-                if source == 'linkedin':
-                    scraper = self.scrapers.get('linkedin')
-                elif source == 'builtin_nyc':
-                    scraper = self.scrapers.get('builtin')
-                elif source == 'yc_jobs':
-                    scraper = self.scrapers.get('yc_jobs')
-                
-                # Fetch description for this specific job
-                if scraper and hasattr(scraper, 'fetch_single_job_description'):
+                if scraper and url and hasattr(scraper, 'fetch_single_job_description'):
                     try:
-                        description = scraper.fetch_single_job_description(url)
-                        job_data['description'] = description
-                        if i % 10 == 0:
-                            logger.info(f"Fetched descriptions for {i}/{len(new_job_candidates)} new jobs...")
+                        job_data['description'] = scraper.fetch_single_job_description(url) or ''
                     except Exception as e:
                         logger.debug(f"Error fetching description for {url}: {e}")
-                        job_data['description'] = ""
-                
-                jobs_with_descriptions.append(job_data)
-            
-            logger.info(f"Fetched descriptions for {len(jobs_with_descriptions)} new jobs")
-            
-            # 4. Score and save new jobs
-            new_jobs = []
+                        job_data.setdefault('description', '')
+                return job_data
+
+            logger.info(f"Fetching descriptions for {len(new_job_candidates)} jobs "
+                        f"({max_fetch_workers} workers)...")
+            jobs_with_descriptions: List[Dict[str, Any]] = []
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=max_fetch_workers) as pool:
+                futures = [pool.submit(_fetch_one, jd) for jd in new_job_candidates]
+                for n, fut in enumerate(as_completed(futures), 1):
+                    try:
+                        jobs_with_descriptions.append(fut.result())
+                    except Exception as e:
+                        logger.debug(f"Fetch worker error: {e}")
+                    if n % 50 == 0:
+                        logger.info(f"  ...fetched {n}/{len(new_job_candidates)}")
+            logger.info(f"Fetched descriptions for {len(jobs_with_descriptions)} jobs")
+
+            # 4. Score — IN PARALLEL — then save sequentially on the main thread
+            #    (SQLite writes are not thread-safe; scoring/AI calls are I/O-bound).
             lang_dropped = 0
+            to_score: List[Dict[str, Any]] = []
             for job_data in jobs_with_descriptions:
-                # ── Language filter: drop non-English postings ────────────────
                 lang_text = f"{job_data.get('title', '')} {(job_data.get('description') or '')[:300]}"
                 if not _is_english(lang_text):
                     logger.debug(f"Dropped (non-English): {job_data.get('title')} @ {job_data.get('company')}")
                     lang_dropped += 1
-                    continue
+                else:
+                    to_score.append(job_data)
 
-                # Score the job
-                score_result = self.scorer.score_job(job_data)
+            max_score_workers = int(os.getenv("SCORE_WORKERS", "6"))
+            logger.info(f"Scoring {len(to_score)} jobs ({max_score_workers} workers)...")
+            scored: List[tuple] = []  # (job_data, score_result)
+            with ThreadPoolExecutor(max_workers=max_score_workers) as pool:
+                fut_map = {pool.submit(self.scorer.score_job, jd): jd for jd in to_score}
+                for fut in as_completed(fut_map):
+                    jd = fut_map[fut]
+                    try:
+                        scored.append((jd, fut.result()))
+                    except Exception as e:
+                        logger.error(f"Scoring error for {jd.get('title')}: {e}")
+
+            # Save sequentially (highest score first so DB ordering is sensible)
+            new_jobs = []
+            store_floor = self.config['thresholds'].get('store_only', 50)
+            scored.sort(key=lambda x: x[1].get('fit_score', 0), reverse=True)
+            for job_data, score_result in scored:
                 job_score = score_result['fit_score']
-
-                # ── Floor check: drop jobs below store_only threshold ──
-                store_floor = self.config['thresholds'].get('store_only', 50)
                 if job_score < store_floor:
                     logger.debug(
                         f"Dropped (below floor {store_floor}): "
-                        f"{job_data.get('title')} @ {job_data.get('company')} "
-                        f"(score={job_score})"
+                        f"{job_data.get('title')} @ {job_data.get('company')} (score={job_score})"
                     )
                     stats['jobs_duplicate'] += 1  # reuse filtered counter
                     continue
 
-                # Merge scoring data with job data
                 bd = score_result.get('breakdown', {})
                 job_record = {
                     **job_data,
@@ -399,29 +499,14 @@ class JobHunter:
                     'visa_status': score_result['visa_status'],
                     'visa_keywords_found': score_result['matches'].get('visa_keywords', [])
                 }
-                
-                # Save to database
                 try:
                     saved_job = self.db.add_job(job_record)
                     job_record['id'] = saved_job.id
                     new_jobs.append(job_record)
                     stats['jobs_new'] += 1
-                    
-                    logger.debug(
-                        f"Saved: {job_record['title']} @ {job_record.get('company')} "
-                        f"(Score: {job_score}) | "
-                        f"kw_ai={bd.get('ai_semantic', 0):.1f} "
-                        f"tech={bd.get('technical', 0):.1f} "
-                        f"ind={bd.get('industry', 0):.1f} "
-                        f"role={bd.get('role', 0):.1f} "
-                        f"elig={bd.get('eligibility', 0):.1f} "
-                        f"visa={bd.get('visa', 0):.1f} "
-                        f"loc_ok={score_result.get('location_ok')} "
-                        f"snr_ok={score_result.get('seniority_ok')}"
-                    )
                 except Exception as e:
                     logger.error(f"Error saving job: {e}")
-            
+
             logger.info(f"Processed {stats['jobs_new']} new jobs ({stats['jobs_duplicate']} duplicates/filtered, {lang_dropped} non-English dropped)")
             
             # 5. Send alerts for high matches
@@ -578,6 +663,28 @@ class JobHunter:
         seen_job_ids = set()  # Track unique jobs by source_id or URL
         
         locations = self.config.get('locations', ['New York, NY'])  # Default to NYC if not specified
+
+        # Collapse interchangeable remote labels (Remote / Remote (Global) / Anywhere /
+        # Freelance all resolve to the same worldwide LinkedIn pass). Keep the first
+        # remote label + the first country-tagged remote (e.g. "Remote (US)"), drop the
+        # rest so we don't run the identical remote search 5× per run.
+        collapsed: List[str] = []
+        seen_remote_geo: set = set()
+        for loc in locations:
+            low = (loc or '').lower()
+            is_remote = any(tok in low for tok in
+                            ('remote', 'anywhere', 'freelance', 'work from home', 'wfh'))
+            if is_remote:
+                m = re.search(r'\(([^)]+)\)', low)
+                geo_tag = m.group(1).strip() if m else 'global'
+                if geo_tag in seen_remote_geo:
+                    continue
+                seen_remote_geo.add(geo_tag)
+            collapsed.append(loc)
+        if len(collapsed) != len(locations):
+            logger.info(f"Collapsed {len(locations)} locations → {len(collapsed)} "
+                        f"(deduped interchangeable remote passes)")
+        locations = collapsed
 
         def _add_jobs(jobs: List[Dict[str, Any]]) -> int:
             """Deduplicate within this scrape run and append unique jobs."""

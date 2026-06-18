@@ -113,7 +113,7 @@
       {% if job.reasoning %}
       <div class="reasoning-block">
         <div class="rb-label">AI assessment</div>
-        <div class="rb-text">{{ job.reasoning }}</div>
+        <div class="rb-text">{{ job.reasoning | md_inline }}</div>
       </div>
       {% endif %}
 

@@ -45,9 +45,9 @@ class JobScorer:
     WEIGHTS = {
         'ai_semantic': 40,  # Kimi K2.5 contextual score — dominant signal
         'technical':   20,  # Pure skill-keyword match (culture removed to own component)
-        'culture':     15,  # Culture/environment fit — boost/penalise signals
-        'role':        10,  # Role title + description match
+        'role':        15,  # Role title + description match (ML-first; weighted up)
         'industry':    10,  # Domain / industry alignment
+        'culture':     10,  # Culture/environment fit — boost/penalise signals
         'eligibility':  2,  # Experience years match (unreliable — kept low)
         'visa':         3,  # Sponsorship / visa status
     }
@@ -424,10 +424,10 @@ class JobScorer:
         
         # Combine matches (description weighted higher)
         all_matches = list(set(title_matches + description_matches))
-        
+
         if not all_matches:
             return 0.0, []
-        
+
         # Score calculation - favor description matches
         # Description match: full points
         # Title-only match: reduced points
@@ -438,7 +438,24 @@ class JobScorer:
         elif title_matches:
             # Title only = weaker signal
             base_score = 60
-        
+
+        # ── ML/AI-FIRST BIAS ──────────────────────────────────────────────────
+        # The candidate is targeting ML/AI primarily. If an ML/AI role matched,
+        # keep the full signal. If ONLY general-SWE roles matched (no ML signal),
+        # apply a small haircut so ML roles rank above equivalent generic ones.
+        ml_role_tokens = (
+            'machine learning', 'ml engineer', 'ai engineer', 'mlops',
+            'data engineer', 'data scientist', 'applied scientist',
+            'research engineer', 'nlp',
+        )
+        title_l = title.lower()
+        matched_ml = any(tok in m.lower() for m in all_matches for tok in ml_role_tokens) \
+            or any(tok in title_l for tok in ml_role_tokens)
+        if matched_ml:
+            base_score = min(100, base_score + 8)   # nudge ML roles up
+        else:
+            base_score = int(base_score * 0.9)       # general SWE slightly lower
+
         return base_score, all_matches
     
     def _extract_eligibility_sections(self, description: str) -> str:
@@ -499,32 +516,33 @@ class JobScorer:
             'concerns': []
         }
         
-        # Check experience requirements
-        # Harvey has 3-4 years, so look for: 2-5 years, 3+ years, 4+ years
+        # Check experience requirements.
+        # Candidate is ~1 year full-time (junior). Junior-friendly requirements
+        # (0–2 yrs) are a strong match; 3 yrs is a mild stretch; 5+ yrs is a real
+        # gap. The seniority gate handles 6+/8+ separately, so concerns here only
+        # flag mid-senior asks that the seniority gate's clear-requirement patterns
+        # might miss.
         exp_patterns = [
             r'(\d+)\s*[-–to]+\s*(\d+)\s*years',  # Range: 2-5 years
             r'(\d+)\+?\s*years'  # Minimum: 3+ years
         ]
-        
+
         for pattern in exp_patterns:
             matches_found = re.findall(pattern, eligibility_text.lower())
             for match in matches_found:
                 if isinstance(match, tuple):
-                    # Range match
+                    # Range match — use the LOWER bound (the true minimum bar)
                     min_years = int(match[0])
-                    max_years = int(match[1]) if match[1] else min_years
-                    
-                    # Harvey has 3-4 years
-                    if min_years <= 4 and max_years >= 3:
+                    if min_years <= 2:
                         matches['experience_match'] = True
-                    elif min_years >= 6:
+                    elif min_years >= 5:
                         matches['concerns'].append(f'requires_{min_years}+_years')
                 else:
-                    # Single number match
+                    # Single "N+ years" minimum
                     years = int(match)
-                    if 2 <= years <= 5:
+                    if years <= 2:
                         matches['experience_match'] = True
-                    elif years >= 6:
+                    elif years >= 5:
                         matches['concerns'].append(f'requires_{years}+_years')
         
         # Check for Harvey's skills in requirements
@@ -792,13 +810,22 @@ class JobScorer:
 
         max_years = max(req_years, default=0)
         if max_years >= 8:
-            return False, 'years_8_plus', 0.3   # Heavy penalty — too senior, but not zero
+            return False, 'years_8_plus', 0.25  # Way out of range for a junior
         if max_years >= 6:
-            return True, 'years_6_plus', 0.85   # Stretch — slight penalty
+            return True, 'years_6_plus', 0.6    # Big stretch — strong penalty
+        if max_years >= 4:
+            return True, 'years_4_plus', 0.85   # Mild stretch for ~1yr candidate
 
-        # Senior IC title is fine (~4 years; Harvey is already at this level)
+        # "Senior" IC title — soft-penalise (candidate is ~6 months in, targeting
+        # junior/mid). Not excluded: the current ArborMeta title is "ML Engineer"
+        # and senior roles occasionally take strong juniors.
         if re.search(r'\bsenior\b', title_lower):
-            return True, 'senior_ic', 1.0
+            return True, 'senior_ic', 0.8
+
+        # Junior/graduate/entry signals in the title — small boost-by-no-penalty,
+        # these are the sweet spot.
+        if re.search(r'\b(junior|graduate|grad|entry[- ]level|associate)\b', title_lower):
+            return True, 'junior_ic', 1.0
 
         return True, 'ok', 1.0
     

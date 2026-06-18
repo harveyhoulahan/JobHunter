@@ -72,33 +72,53 @@ HARVEY_PROFILE = {
 
     # ── target roles (matched against job titles) ─────────────
     #    Ordered roughly by preference; scorer can use position as weight
+    #    PRIMARY FOCUS = Machine Learning / AI. General SWE roles come after so the
+    #    role scorer and ML-first search ordering surface ML work first.
     "roles": [
-        # primary
+        # ── primary: ML / AI (junior-friendly variants first) ──
         "Machine Learning Engineer",
         "ML Engineer",
+        "Junior Machine Learning Engineer",
+        "Junior ML Engineer",
+        "Graduate Machine Learning Engineer",
+        "Associate Machine Learning Engineer",
+        "Machine Learning Engineer I",
+        "AI Engineer",
+        "Junior AI Engineer",
+        "Applied Scientist",
+        "Applied ML Engineer",
+        "MLOps Engineer",
+        "Research Engineer",
+        "Data Engineer",
+        "Junior Data Engineer",
+        "Data Scientist",
+        "Junior Data Scientist",
+        "NLP Engineer",
+        # ── secondary: general software (junior variants included) ──
         "Software Engineer",
+        "Junior Software Engineer",
+        "Graduate Software Engineer",
+        "Associate Software Engineer",
+        "Software Engineer I",
+        "Backend Engineer",
+        "Junior Backend Engineer",
+        "Python Developer",
+        "Junior Python Developer",
         "Full Stack Engineer",
         "Full Stack Developer",
-        "Backend Engineer",
         "Backend Developer",
-        "Python Developer",
         "React Developer",
         "Frontend Engineer",
-        # mobile
+        # ── mobile ──
         "iOS Engineer",
         "iOS Developer",
         "Mobile Engineer",
-        # data / ML
-        "Data Engineer",
-        "AI Engineer",
-        "MLOps Engineer",
-        "Research Engineer",
-        # domain-specific
+        # ── domain-specific ──
         "Geospatial Engineer",
         "GIS Developer",
         "Climate Tech Engineer",
         "Sustainability Tech",
-        # contract / freelance signals
+        # ── contract / freelance signals ──
         "Contract Software Engineer",
         "Freelance Developer",
         "Remote Software Engineer",
@@ -165,10 +185,13 @@ HARVEY_PROFILE = {
     ],
 
     # ── seniority (controls _assess_seniority filtering) ──────
+    #    ~6 months full-time experience → target junior + mid; senior is a soft
+    #    penalty (not excluded — the ArborMeta title is "ML Engineer"), and
+    #    management/staff/principal stay hard-excluded.
     "seniority": {
-        "target": ["junior", "mid", "senior"],  # accept all three
-        "exclude": ["director", "vp", "chief", "head of", "principal"],
-        "years_experience": 2,
+        "target": ["junior", "graduate", "associate", "entry", "mid"],
+        "exclude": ["director", "vp", "chief", "head of", "principal", "staff engineer"],
+        "years_experience": 1,
     },
 
     # ── education (for keyword matching) ──────────────────────

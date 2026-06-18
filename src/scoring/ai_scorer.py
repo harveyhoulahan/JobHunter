@@ -134,20 +134,37 @@ CANDIDATE PROFILE:
 
 Your job is to score how well a given job posting fits this candidate on a scale of 0–100.
 
+SENIORITY CONTEXT (important): the candidate is EARLY-CAREER — roughly 6–12 months
+of full-time experience, a 2025 CS graduate now working as an ML Engineer. The
+HARD FILTER is LEVEL: they want JUNIOR / graduate / associate / mid roles, NOT
+senior or management. Within that level they are genuinely OPEN across engineering:
+ML/AI is the favourite and a nice bonus, but strong full-stack, backend, frontend,
+and design-minded ("product engineer / tastemaker") roles are very welcome too.
+A junior role with ANY ML/AI/data flavour is ideal; a junior role without it is
+still a good match if the stack and product fit.
+
 Scoring criteria:
-- 85–100: Near-perfect match — role, tech stack, domain, seniority all align with candidate's current work
-- 70–84: Strong match — most dimensions align, minor gaps
-- 55–69: Good match — solid transferable skills, some domain stretch
-- 40–54: Moderate match — relevant background but meaningful gaps
-- 25–39: Weak match — limited overlap, significant upskilling needed
-- 0–24: Poor match — wrong domain, wrong seniority, or excluded (e.g. no sponsorship for US role)
+- 85–100: Near-perfect match — junior/mid ML/AI role, tech stack + domain align with the candidate's work
+- 70–84: Strong match — junior/mid role, most dimensions align (ML or strong SWE), minor gaps
+- 55–69: Good match — solid transferable skills, some domain or level stretch
+- 40–54: Moderate match — relevant background but meaningful gaps (e.g. asks 3–4 yrs, or non-ML)
+- 25–39: Weak match — limited overlap, or aimed at clearly more senior candidates
+- 0–24: Poor match — wrong domain, far too senior, or excluded (e.g. no sponsorship for US role)
 
 IMPORTANT rules:
 - The candidate is an Australian citizen based in Byron Bay. For AU/EU/CA/SG/Remote roles, visa is NOT an issue.
 - For US roles: E-3 visa applies (Australian-only). "No sponsorship" = score 0–15 maximum.
-- Do NOT penalise for "Senior" title — candidate has ~4 years and works as ML Engineer already.
-- DO penalise heavily for Engineering Manager / Director / VP / Staff / Principal (not what candidate wants).
-- The candidate's CURRENT role is ML Engineer at ArborMeta (geospatial + carbon). Roles in that space score highest.
+- LEVEL is the main filter. Junior / Graduate / Associate / "Engineer I" / mid roles are the
+  SWEET SPOT — score them generously regardless of sub-discipline.
+- ML/AI is a BONUS, not a requirement: a junior ML/AI/MLOps/Data role gets a small edge, but a
+  junior frontend, full-stack, backend, or design-minded product role is also a strong match.
+  Do NOT heavily penalise a good junior role just for lacking ML.
+- A role requiring 3–4+ years is a stretch (cap ~65); 5+ years is a significant gap (cap ~45);
+  6+ years or "Senior" in the title should be penalised as too senior (cap ~40) but not zeroed.
+- DO penalise heavily (score 0–15) for Engineering Manager / Director / VP / Staff / Principal —
+  the candidate is an individual contributor, not management.
+- The candidate's CURRENT role is ML Engineer at ArborMeta (geospatial + carbon). Junior/mid roles
+  in ML/AI, especially climate/geospatial/data, score highest.
 
 Respond ONLY with a valid JSON object — no markdown, no explanation outside the JSON:
 {{

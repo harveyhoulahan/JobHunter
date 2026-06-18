@@ -55,10 +55,11 @@ class LinkedInScraper(BaseScraper):
     
     def __del__(self):
         """Clean up driver on deletion"""
-        if self.driver:
+        driver = getattr(self, 'driver', None)
+        if driver:
             try:
-                self.driver.quit()
-            except:
+                driver.quit()
+            except Exception:
                 pass
     
     def search_jobs(self, search_terms: List[str], location: str = "New York, NY") -> List[Dict[str, Any]]:
@@ -159,6 +160,46 @@ class LinkedInScraper(BaseScraper):
         location_lower = (location or "").lower()
         remote_location_tokens = ["remote", "freelance", "contract", "anywhere", "work from home", "wfh"]
         return any(tok in location_lower for tok in remote_location_tokens)
+
+    def _linkedin_geo(self, location: str, remote_mode: bool) -> str:
+        """
+        Map a config location label to a geo string LinkedIn's guest search accepts.
+
+        Pseudo-locations like "Remote (US)", "Anywhere", "Freelance" are NOT valid
+        geographies — LinkedIn returns ZERO cards for them. We translate to a real
+        country (or blank = worldwide) and rely on f_WT=2 to express "remote".
+        Verified live: "Remote (US)"→0 results, "United States"→480, ""→480.
+        """
+        loc = (location or "").strip()
+        low = loc.lower()
+
+        # Country hint embedded in a remote label, e.g. "Remote (US)" / "Remote (Global)"
+        country_map = {
+            "us": "United States", "usa": "United States", "united states": "United States",
+            "uk": "United Kingdom", "gb": "United Kingdom",
+            "eu": "European Union", "au": "Australia", "ca": "Canada",
+            "global": "", "worldwide": "", "anywhere": "", "": "",
+        }
+        m = re.search(r"\(([^)]+)\)", low)
+        if m:
+            tag = m.group(1).strip()
+            if tag in country_map:
+                return country_map[tag]
+
+        # Pure pseudo-locations → worldwide (blank geo + f_WT=2)
+        if low in {"remote", "anywhere", "freelance", "remote (global)", "worldwide",
+                   "distributed", "contract", "digital nomad"}:
+            return ""
+
+        if remote_mode:
+            # Unrecognised remote label: strip remote/freelance words, keep any real
+            # place remainder (e.g. "Remote Sydney" → "Sydney"). May end up blank.
+            cleaned = re.sub(r"\b(remote|freelance|contract|wfh|work from home|anywhere)\b",
+                             " ", loc, flags=re.IGNORECASE)
+            cleaned = " ".join(cleaned.replace("(", " ").replace(")", " ").split())
+            return cleaned
+
+        return loc
 
     def _load_work_type_preferences(self) -> Dict[str, bool]:
         """Load work type preferences from config/search_preferences.json."""
@@ -448,11 +489,17 @@ class LinkedInScraper(BaseScraper):
         for page_num in range(MAX_PAGES):
             start_index = page_num * 25  # LinkedIn uses 25 jobs per page
             
-            # LinkedIn public job search URL with filters
+            # LinkedIn public job search URL with filters.
+            # NOTE: `location` here must be a real geo. Pseudo labels like
+            # "Remote (US)" return zero cards, so map via _linkedin_geo().
+            geo = self._linkedin_geo(location, remote_mode)
+            # Posted-within window (seconds). Default 7 days; tighten via env for
+            # even fresher results, e.g. LINKEDIN_POSTED_DAYS=3.
+            _posted_days = int(os.getenv("LINKEDIN_POSTED_DAYS", "7"))
             params = {
                 'keywords': term,
-                'location': location,
-                'f_TPR': 'r604800',  # Posted in last 7 days
+                'location': geo,
+                'f_TPR': f'r{_posted_days * 86400}',  # Posted in last N days
                 'f_WT': ','.join(work_type_codes),
                 'sortBy': 'DD',  # Sort by date (most recent)
                 'f_E': '2,3',  # Entry level & Associate (Junior to Mid)
@@ -567,9 +614,13 @@ class LinkedInScraper(BaseScraper):
             )
             location = location_elem.get_text(strip=True) if location_elem else "New York, NY"
             
-            # Posted date
+            # Posted date — prefer the <time datetime="YYYY-MM-DD"> attribute
+            # (reliable ISO) over the display text ("2 weeks ago").
             time_elem = card.find('time') or card.find('span', class_='job-search-card__listdate')
-            posted_date = time_elem.get_text(strip=True) if time_elem else ""
+            posted_date = ""
+            if time_elem:
+                posted_date = (time_elem.get('datetime')
+                               or time_elem.get_text(strip=True) or "")
             
             # Extract job ID from URL
             source_id = ""
