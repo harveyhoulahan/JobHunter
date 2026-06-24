@@ -497,7 +497,8 @@ class JobHunter:
                     'industry_matches': score_result['matches']['industry'],
                     'role_matches': score_result['matches']['role'],
                     'visa_status': score_result['visa_status'],
-                    'visa_keywords_found': score_result['matches'].get('visa_keywords', [])
+                    'visa_keywords_found': score_result['matches'].get('visa_keywords', []),
+                    'remote': score_result.get('remote', False),
                 }
                 try:
                     saved_job = self.db.add_job(job_record)

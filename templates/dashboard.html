@@ -473,9 +473,14 @@ function applyFilters() {
     const loc    = (row.dataset.loc  || '').toLowerCase();
     const source = (row.dataset.src  || '').toLowerCase();
     const visa   = (row.dataset.visa || '').toLowerCase();
+    const remote = row.dataset.remote === '1';
+
+    // "remote" region uses the reliable remote flag; others match location text
+    const regionOk = reg === 'all'
+      || (reg === 'remote' ? remote : loc.includes(reg.toLowerCase()));
 
     const ok = (!q   || text.includes(q))
-            && (reg === 'all' || loc.includes(reg.toLowerCase()))
+            && regionOk
             && (src === 'all' || source.includes(src))
             && (vis === 'all' || visa.includes(vis));
 

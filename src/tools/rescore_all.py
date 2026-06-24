@@ -102,10 +102,17 @@ def main():
             if ai_details.get('is_fallback', False):
                 fallbacks += 1
 
+            # Refresh reasoning so the displayed explanation matches the new score.
+            # Prefer Kimi's job-specific sentence; fall back to the tier template.
+            ai_reason = (ai_details.get('ai_reasoning') or '').strip()
+            reasoning = ai_reason if len(ai_reason) > 20 else (result.get('reasoning') or '')
+
             new_scores.append(new_score)
             batch_updates.append((
                 new_score,
                 json.dumps(breakdown),
+                reasoning,
+                1 if result.get('remote') else 0,
                 row['id'],
             ))
             updated += 1
@@ -144,10 +151,10 @@ def main():
 
 
 def _flush(conn: sqlite3.Connection, updates: list):
-    """Write a batch of (score, breakdown_json, id) to the DB."""
+    """Write a batch of (score, breakdown_json, reasoning, remote, id) to the DB."""
     cur = conn.cursor()
     cur.executemany(
-        "UPDATE jobs SET fit_score = ?, score_breakdown = ? WHERE id = ?",
+        "UPDATE jobs SET fit_score = ?, score_breakdown = ?, reasoning = ?, remote = ? WHERE id = ?",
         updates
     )
     conn.commit()

@@ -372,18 +372,67 @@ HARVEY_PROFILE = {
     },
 }
 
-# ── User profile override ──────────────────────────────────────────────────────
+# ── User profile MERGE ─────────────────────────────────────────────────────────
 # If config/user_profile.json exists (created by the /setup onboarding wizard),
-# it completely replaces the default profile above.  This lets any user run the
-# tool for themselves without touching this source file.
+# we MERGE it over the rich defaults above — we do NOT replace wholesale.
+#
+# Why merge: the setup wizard's Kimi extraction produces a thin profile (identity,
+# summary, experience, a few roles/skills/industries, search_terms). It does NOT
+# include the scoring-critical config — seniority targeting, culture_signals,
+# keyword boost/penalise lists, hard_exclude_title_keywords, the visa sponsorship
+# keyword sets, or the tiered location regions. A full replace silently drops all
+# of that and cripples scoring (role=0 for ML titles, culture flat at 50, empty
+# visa keyword lists, no title pre-filter). Merging keeps the user's real, current
+# data while falling back to the rich defaults for everything they didn't provide.
+#
+# Merge rules:
+#   • roles / industries  → UNION (defaults first to preserve ML-first ordering,
+#                           then any user additions not already present)
+#   • skills              → per-category UNION
+#   • location (string)   → keep the rich location dict (tiers/regions) and record
+#                           the user's stated city as location["current"]
+#   • everything else     → user value wins (name, email, summary, experience,
+#                           search_terms, alert_thresholds, min_salary, …)
 import json as _json, os as _os
 _user_profile_path = _os.path.join(
     _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
     "config", "user_profile.json"
 )
+
+
+def _merge_user_profile(default: dict, user: dict) -> dict:
+    merged = dict(default)
+
+    def _union_list(base, extra):
+        out, seen = [], set()
+        for item in list(base) + list(extra):
+            key = item.lower() if isinstance(item, str) else id(item)
+            if key not in seen:
+                seen.add(key)
+                out.append(item)
+        return out
+
+    for k, v in user.items():
+        if k in ("roles", "industries") and isinstance(v, list):
+            merged[k] = _union_list(default.get(k, []), v)
+        elif k == "skills" and isinstance(v, dict):
+            ms = {cat: list(lst) for cat, lst in default.get("skills", {}).items()}
+            for cat, lst in v.items():
+                ms[cat] = _union_list(ms.get(cat, []), lst or [])
+            merged[k] = ms
+        elif k == "location" and isinstance(v, str) and isinstance(default.get("location"), dict):
+            loc = dict(default["location"])
+            loc["current"] = v
+            merged[k] = loc
+        elif v not in (None, "", [], {}):
+            merged[k] = v  # user value wins when they actually provided one
+    return merged
+
+
 if _os.path.exists(_user_profile_path):
     try:
         with open(_user_profile_path, encoding="utf-8") as _f:
-            HARVEY_PROFILE = _json.load(_f)
+            _user_profile = _json.load(_f)
+        HARVEY_PROFILE = _merge_user_profile(HARVEY_PROFILE, _user_profile)
     except Exception:
-        pass  # silently keep the default if file is corrupt
+        pass  # silently keep the rich default if the file is missing/corrupt

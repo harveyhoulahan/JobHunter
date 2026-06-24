@@ -207,6 +207,19 @@ class JobScorer:
         seniority_ok, seniority_flag, seniority_penalty = self._assess_seniority(title, description)
         total_score *= seniority_penalty
 
+        # Remote: additive preference bonus (candidate is leaning remote). Applied
+        # AFTER multipliers so it isn't scaled away. Eligible remote → boost;
+        # US-only remote w/o sponsorship → none; hybrid/onsite → none.
+        is_remote, remote_scope, remote_bonus = self._assess_remote(title, description, location)
+        total_score = min(100.0, total_score + remote_bonus)
+
+        # Gig / AI-training crowdwork penalty. Platforms like Alignerr/Labelbox/
+        # Outlier/Mercor list per-task RLHF & data-annotation "jobs" that look like
+        # ML roles to the keyword scorer and flood the top. These are not salaried
+        # positions, so we damp them hard.
+        gig_penalty = self._gig_penalty(title, company, description)
+        total_score *= gig_penalty
+
         # SCORE_DEBUG: log every component for manual calibration
         if SCORE_DEBUG:
             logger.debug(
@@ -276,6 +289,8 @@ class JobScorer:
             'location_flag': location_flag,
             'seniority_ok': seniority_ok,
             'seniority_flag': seniority_flag,
+            'remote': is_remote,
+            'remote_scope': remote_scope,
             'reasoning': reasoning
         }
     
@@ -355,21 +370,30 @@ class JobScorer:
 
     def _score_industry(self, text: str) -> Tuple[float, List[str]]:
         """
-        Score industry match (0-100)
-        PRIORITY: Med Tech, Ag Tech, Fashion Tech get bonus points
+        Score industry match (0-100).
+        PRIORITY bonus covers all of the candidate's domains of genuine interest:
+          • climate / carbon / geospatial / sustainability / AgTech (ArborMeta)
+          • healthcare / medtech (stated interest)
+          • fashion / retail / e-commerce (Step One experience + interest)
         """
         matches = []
         has_priority_industry = False
         text_lower = text.lower()
-        
-        # Priority industries (Med Tech, Ag Tech, Fashion Tech)
+
         priority_keywords = [
+            # climate / geospatial / sustainability / ag
+            'climate', 'climate tech', 'carbon', 'carbon credit', 'carbon market',
+            'sustainability', 'sustainable', 'cleantech', 'clean energy', 'greentech',
+            'environmental', 'ecology', 'ecological', 'conservation', 'biodiversity',
+            'geospatial', 'remote sensing', 'earth observation', 'gis',
+            'renewable', 'renewables', 'energy transition',
+            'agtech', 'ag tech', 'agriculture', 'agricultural', 'precision agriculture',
+            # healthcare / medtech
             'medical', 'medtech', 'healthcare', 'healthtech', 'health tech',
-            'clinical', 'medical device', 'diagnostics', 'digital health',
-            'agriculture', 'agtech', 'ag tech', 'agricultural', 'farm tech',
-            'livestock', 'precision agriculture', 'smart farming',
-            'fashion tech', 'fashiontech', 'apparel tech', 'textile tech',
-            'fashion ai', 'fashion technology', 'retail tech'
+            'clinical', 'medical device', 'diagnostics', 'digital health', 'biotech',
+            # fashion / retail / e-commerce
+            'fashion tech', 'fashiontech', 'fashion', 'apparel', 'textile',
+            'retail tech', 'retail', 'e-commerce', 'ecommerce', 'shopify',
         ]
         
         for industry in self.industries:
@@ -653,6 +677,122 @@ class JobScorer:
         if ambiguous_found:
             return 55.0, 'ambiguous', ambiguous_found
         return 60.0, 'none', []
+
+    def _gig_penalty(self, title: str, company: str, description: str) -> float:
+        """
+        Return a multiplier (≤1.0) that damps AI-training / data-annotation
+        crowdwork gigs, which masquerade as ML roles and flood the rankings.
+
+        Definitive: known crowdwork platforms (matched on COMPANY only, so a real
+        job merely *mentioning* Scale AI isn't penalised). Otherwise: require BOTH
+        a strong crowdwork phrase AND a per-task/contributor signal, so genuine ML
+        roles that happen to say "train models" are never caught.
+        """
+        co = (company or "").lower()
+        text = f"{(title or '').lower()} {(description or '')[:1500].lower()}"
+
+        gig_companies = (
+            "alignerr", "labelbox", "outlier", "mercor", "dataannotation",
+            "data annotation", "remotasks", "scale ai", "surge ai", "surgehq",
+            "invisible technologies", "telus international", "appen", "prolific",
+            "micro1", "soul ai", "sigma ai", "stellar ai", "handshake ai",
+        )
+        if any(g in co for g in gig_companies):
+            return 0.5
+
+        strong = (
+            "ai training", "train ai", "help train ai", "teach ai", "tutor ai",
+            "rate ai responses", "evaluate ai-generated", "ai-generated responses",
+            "data annotation", "data labeling", "data labelling", "labeling task",
+            "human feedback for ai", "improve ai models by", "review ai output",
+        )
+        contributor = (
+            "per task", "per-task", "hourly", "freelance", "flexible hours",
+            "work whenever", "work on your own schedule", "1099", "contributor",
+            "expert network", "apply to become", "sign up", "no fixed hours",
+        )
+        if any(s in text for s in strong) and any(c in text for c in contributor):
+            return 0.55
+        return 1.0
+
+    def _assess_remote(self, title: str, description: str, location: str) -> Tuple[bool, str, float]:
+        """
+        Decide whether a role is genuinely remote and how remote-able it is FOR
+        THIS candidate (AU citizen, prefers remote). Returns:
+            (is_remote, scope, bonus)
+        scope ∈ {worldwide, au_ok, eu_ok, region_locked_us, remote_unspecified,
+                 hybrid, onsite}
+        bonus = additive points applied to the final 0-100 score. The candidate is
+        actively leaning remote, so eligible remote roles get a configurable boost
+        (REMOTE_BOOST, default 6); US-only remote without sponsorship gets nothing
+        (needs E-3); hybrid/onsite are neutral.
+        """
+        boost = float(os.getenv("REMOTE_BOOST", "6"))
+        t = (title or "").lower()
+        loc = (location or "").lower()
+        d = (description or "").lower()
+        head = f"{t} {loc} {d[:1200]}"   # is-remote detection (location helps here)
+        # Scope/region-lock is judged from TITLE + DESCRIPTION only. The location
+        # field is unreliable for remote-board jobs (it carries our concatenated
+        # scrape-locations string like "Remote, Remote (US), Sydney…", which would
+        # falsely trip the US-lock check for non-US companies).
+        scope_text = f"{t} {d}"
+
+        # ── explicit NON-remote signals ──────────────────────────────────────
+        onsite_kw = ["on-site only", "onsite only", "fully on-site", "fully onsite",
+                     "no remote", "not a remote", "not remote", "in-office",
+                     "in office five", "office-based", "must be in office",
+                     "5 days a week in the office", "five days in office",
+                     "on site only"]
+        if any(k in head for k in onsite_kw):
+            return False, "onsite", 0.0
+
+        remote_kw = ["remote", "work from home", "wfh", "work from anywhere",
+                     "fully remote", "remote-first", "remote first",
+                     "distributed team", "work remotely", "anywhere"]
+        is_remote = any(k in head for k in remote_kw)
+
+        # "hybrid" present but no strong remote phrasing → treat as hybrid
+        if "hybrid" in head and not any(
+            k in head for k in ["fully remote", "remote-first", "remote first",
+                                "work from anywhere", "100% remote", "work remotely"]
+        ):
+            return False, "hybrid", 0.0
+
+        if not is_remote:
+            return False, "onsite", 0.0
+
+        # ── remote — classify scope / region lock ────────────────────────────
+        worldwide_kw = ["work from anywhere", "anywhere in the world", "worldwide",
+                        "globally remote", "remote worldwide", "fully remote",
+                        "100% remote", "remote, anywhere", "remote (anywhere)",
+                        "remote anywhere", "global remote"]
+        au_kw = ["remote within australia", "anywhere in australia", "australia-based",
+                 "remote (australia", "based in australia", "remote australia"]
+        eu_kw = ["remote (eu", "within the eu", "eu-based", "europe only",
+                 "remote europe", "based in europe", "within europe"]
+        us_lock_kw = ["remote (us", "remote - us", "remote, us", "us-based",
+                      "u.s.-based", "us based", "must reside in the united states",
+                      "based in the united states", "within the us",
+                      "must be located in the us", "authorized to work in the united states",
+                      "must be based in the u.s"]
+
+        # Sponsorship signals override a US lock (E-3 etc.)
+        has_sponsor = any(k in d for k in self.visa_positive) if self.visa_positive else False
+
+        if any(k in scope_text for k in worldwide_kw):
+            return True, "worldwide", boost
+        if any(k in scope_text for k in au_kw):
+            return True, "au_ok", boost
+        if any(k in scope_text for k in eu_kw):
+            # AU-EU mobility pathway → partially eligible
+            return True, "eu_ok", boost * 0.6
+        if any(k in scope_text for k in us_lock_kw):
+            # US-only remote: only valuable if sponsorship/E-3 is on the table
+            return (True, "region_locked_us", boost * 0.5) if has_sponsor else (True, "region_locked_us", 0.0)
+
+        # Remote but region not stated — eligible by default, slightly hedged
+        return True, "remote_unspecified", boost * 0.8
 
     def _assess_location(self, location: str) -> Tuple[bool, float, str]:
         """

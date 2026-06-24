@@ -36,6 +36,7 @@
      data-score="{{ score }}"
      data-src="{{ src }}"
      data-loc="{{ job.location | default('') | lower }}"
+     data-remote="{{ 1 if job.remote else 0 }}"
      data-visa="{{ visa }}"
      data-text="{{ (job.title ~ ' ' ~ job.company ~ ' ' ~ (job.location | default('')) ~ ' ' ~ (tech_tags | join(' ')) ~ ' ' ~ (role_tags | join(' '))) | lower }}">
 

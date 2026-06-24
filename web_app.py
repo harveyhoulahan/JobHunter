@@ -64,14 +64,27 @@ def index():
         all_jobs = session.query(Job)\
             .filter(Job.applied == False)\
             .order_by(Job.fit_score.desc(), Job.created_at.desc())\
-            .limit(200)\
+            .limit(400)\
             .all()
-        
+
+        # Collapse duplicate postings (same company + title listed across multiple
+        # locations — e.g. crowdwork platforms spam one role per city). Ordered by
+        # score desc, so the first occurrence kept is the highest-scored one.
+        _seen = set()
+        deduped = []
+        for j in all_jobs:
+            key = (str(j.company or '').strip().lower(), str(j.title or '').strip().lower())
+            if key in _seen:
+                continue
+            _seen.add(key)
+            deduped.append(j)
+        all_jobs = deduped[:200]
+
         # Group jobs by score tiers (fit_score is already a float, not a SQLAlchemy column at this point)
         top_matches = []
         great_matches = []
         good_matches = []
-        
+
         for j in all_jobs:
             score = float(j.fit_score) if j.fit_score is not None else 0.0  # type: ignore[arg-type]
             if score >= 70:
